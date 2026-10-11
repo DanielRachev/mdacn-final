@@ -8,6 +8,8 @@ from urllib.request import urlopen
 import networkx as nx
 import numpy as np
 import pandas as pd
+from pandas.conftest import dtype_backend
+from scipy.sparse import csr_matrix
 
 from mdacn.contracts import NetworkMatrices
 
@@ -121,12 +123,47 @@ def extract_core(
     connected component after a minimum incident-interaction threshold.
     Only the threshold for the selected method is required.
     """
-    raise NotImplementedError("Jacek: extract_core")
+    if method == "k_core":
+        if k is None or k < 0:
+            raise ValueError("k_core requires a non-negative k")
+        return nx.k_core(graph, k=k)
+    if method == "activity_lcc":
+        if min_interactions is None or min_interactions < 0:
+            raise ValueError("activity_lcc requires a non-negative min_interactions")
+        nodes = [
+            node for node in graph
+            if sum(edge["n_positive"] + edge["n_negative"] for edge in graph[node].values())
+            >= min_interactions
+        ]
+        return largest_component(graph.subgraph(nodes))
+    raise ValueError(f"Unknown core method: {method}")
+
+def largest_component(graph: nx.Graph) -> nx.Graph:
+    """Copy the largest connected component, resolving ties by node name."""
+    if not graph:
+        return graph.copy()
+    nodes = min(nx.connected_components(graph), key=lambda x: (-len(x), min(x)))
+    return graph.subgraph(nodes).copy()
 
 
 def build_matrices(graph: nx.Graph) -> NetworkMatrices:
     """Owner: Jacek. Return binary adjacency and signed adjacency in one node order."""
-    raise NotImplementedError("Jacek: build_matrices")
+    if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
+        raise ValueError("Matrices require a simple undirected graph without self loops")
+    if any(edge.get("sign") not in (-1, 1) for _, _, edge in graph.edges(data=True)):
+        raise ValueError("Every edge must have a sign of -1 or +1 (for now?)")
+
+    nodes = tuple(sorted(graph))
+    if not nodes:
+        return NetworkMatrices(nodes, csr_matrix((0, 0)), csr_matrix((0, 0)))
+
+    unsigned = csr_matrix(
+        nx.to_scipy_sparse_array(graph, nodelist=nodes, weight=None, dtype=float, format="csr")
+    )
+    signed = csr_matrix(
+        nx.to_scipy_sparse_array(graph, nodelist=nodes, weight="sign", dtype=float, format="csr")
+    )
+    return NetworkMatrices(nodes, unsigned, signed)
 
 
 def export_graph(graph: nx.Graph, path: Path) -> None:
