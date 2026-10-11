@@ -26,7 +26,7 @@ def fitted_degree_probabilities(
     """Evaluate a fitted discrete PMF on its support"""
     probabilities = np.zeros(degrees.shape, dtype=float)
     support = degrees >= k_min
-    values = degrees[support].astyoe(float)
+    values = degrees[support].astype(float)
     if model == "power_law":
         probabilities[support] = np.power(values, -parameter) / zeta(parameter, k_min)
     elif model == "poisson":
@@ -67,7 +67,62 @@ def fit_degree_baselines(graph: nx.Graph) -> pd.DataFrame:
     Record model, parameters, fitting support, sample size, and fit evidence.
     These fits assess heavy tails; they do not presume scale-free structure.
     """
-    raise NotImplementedError("Jacek: fit_degree_baselines")
+    all_degrees = np.fromiter((degree for _, degree in graph.degree()), dtype=np.float64)
+    degrees = all_degrees[all_degrees > 0]
+    k_min = int(degrees.min()) if degrees.size else 1
+    rows: list[dict[str, str | int | float]] = []
+
+    for model, name in (("power_law", "alpha"), ("poisson", "lambda")):
+        rows.append(
+            {
+                "model": model,
+                "parameter": name,
+                "parameter_value": float("nan"),
+                "k_min": k_min,
+                "sample_size": int(degrees.size),
+                "excluded_zero_degree_nodes": int(all_degrees.size - degrees.size),
+                "log_likelihood": float("nan"),
+                "aic": float("nan"),
+                "ks_distance": float("nan"),
+                "status": "ok"
+            }
+        )
+
+    if not degrees.size or np.all(degrees == degrees[0]):
+        status = "no_positive_degrees" if not degrees.size else "constant_degrees"
+        for row in rows:
+            row["status"] = status
+        return pd.DataFrame(rows)
+
+    def power_law_nll(parameters: NDArray[np.float64]) -> float:
+        alpha = parameters[0]
+        return float(alpha * np.log(degrees).sum() + degrees.size * np.log(zeta(alpha, k_min)))
+
+    def poisson_nll(rate: float) -> float:
+        return float(
+            -poisson.logpmf(degrees, rate).sum() + degrees.size * poisson.logsf(k_min - 1, rate)
+        )
+
+    power_fit = minimize(power_law_nll, x0=[2.0], bounds=[(1.000001, None)])
+    poisson_fit = minimize_scalar(
+        poisson_nll, bounds=(1e-8, float(degrees.mean())), method="bounded"
+    )
+
+    estimates = ((power_fit, float(power_fit.x[0])), (poisson_fit, float(poisson_fit.x)))
+    for row, (fit, parameter) in zip(rows, estimates, strict=True):
+        if not fit.success or not np.isfinite(fit.fun):
+            raise RuntimeError(f"{row['model']} degree fit failed: {fit.message}")
+
+        row.update(
+            parameter_value=parameter,
+            log_likelihood=-float(fit.fun),
+            aic= 2 + 2 * float(fit.fun),
+            ks_distance = _ks_distance(
+                degrees, model=str(row["model"]), parameter=parameter, k_min = k_min
+            )
+        )
+
+    return pd.DataFrame(rows)
 
 
 def degree_assortativity(graph: nx.Graph) -> float:
@@ -118,7 +173,7 @@ def spectral_metrics(adjacency: csr_matrix) -> dict[str, float]:
     if n_nodes <= 32:
         radius = float(np.linalg.eigvalsh(adjacency.toarray())[-1])
         connectivity = (
-            float(np.linalg.eigvalsh(laplacian.toarray())[-1])
+            float(np.linalg.eigvalsh(laplacian.toarray())[1])
             if n_nodes > 1 and n_components == 1
             else 0.0
         )

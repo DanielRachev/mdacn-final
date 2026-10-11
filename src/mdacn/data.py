@@ -8,7 +8,6 @@ from urllib.request import urlopen
 import networkx as nx
 import numpy as np
 import pandas as pd
-from pandas.conftest import dtype_backend
 from scipy.sparse import csr_matrix
 
 from mdacn.contracts import NetworkMatrices
@@ -63,7 +62,7 @@ def load_interactions(path: Path) -> pd.DataFrame:
 
     if invalid.any():
         lines = (interactions.index[invalid] + 2).tolist()
-        raise ValueError(f"Something is wrong with the input data at lines {lines[:5]}")
+        raise ValueError(f"Invalid interaction records at TSV lines {lines[:5]}")
 
     interactions["sentiment"] = sentiments.astype(np.int8)
     interactions["timestamp"] = timestamps
@@ -100,7 +99,7 @@ def aggregate_edges(interactions: pd.DataFrame) -> nx.Graph:
             v,
             n_positive=int(n_positive),
             n_negative=int(n_negative),
-            sign=1 if n_positive > n_negative else -1,
+            sign=1 if n_positive >= n_negative else -1,
         )
 
     for node in graph:
