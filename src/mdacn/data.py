@@ -1,18 +1,18 @@
 """Reddit input, static core extraction, and shared graph export."""
 
 from pathlib import Path
-from typing import Literal
 from shutil import copyfileobj
+from typing import Literal
 from urllib.request import urlopen
 
 import networkx as nx
-import pandas as pd
 import numpy as np
-from scipy.sparse import csr_matrix
+import pandas as pd
 
 from mdacn.contracts import NetworkMatrices
 
 DATASET_URL = "https://snap.stanford.edu/data/soc-redditHyperlinks-body.tsv"
+
 
 def download_dataset(path: Path) -> Path:
     """Download the body TSV, doing nothing if already exists"""
@@ -30,6 +30,7 @@ def download_dataset(path: Path) -> Path:
         temp.unlink(missing_ok=True)
     return path
 
+
 def load_interactions(path: Path) -> pd.DataFrame:
     """Owner: Jacek. Read the body TSV into the interaction table contract.
 
@@ -40,7 +41,7 @@ def load_interactions(path: Path) -> pd.DataFrame:
         "SOURCE_SUBREDDIT": "source",
         "TARGET_SUBREDDIT": "target",
         "LINK_SENTIMENT": "sentiment",
-        "TIMESTAMP": "timestamp"
+        "TIMESTAMP": "timestamp",
     }
 
     interactions = pd.read_csv(
@@ -48,7 +49,9 @@ def load_interactions(path: Path) -> pd.DataFrame:
     ).rename(columns=columns)
     interactions = interactions[list(columns.values())]
     sentiments = pd.to_numeric(interactions["sentiment"], errors="coerce")
-    timestamps = pd.to_datetime(interactions["timestamp"], format="%Y-%m-%d %H:%M:%S", errors="coerce")
+    timestamps = pd.to_datetime(
+        interactions["timestamp"], format="%Y-%m-%d %H:%M:%S", errors="coerce"
+    )
     invalid = (
         interactions["source"].str.strip().eq("")
         | interactions["target"].str.strip().eq("")
@@ -64,6 +67,7 @@ def load_interactions(path: Path) -> pd.DataFrame:
     interactions["timestamp"] = timestamps
     return interactions
 
+
 def aggregate_edges(interactions: pd.DataFrame) -> nx.Graph:
     """Owner: Jacek. Return a simple undirected graph of non-self interactions.
 
@@ -72,16 +76,17 @@ def aggregate_edges(interactions: pd.DataFrame) -> nx.Graph:
     """
     events = interactions.loc[interactions["source"] != interactions["target"]]
     endpoints = np.sort(events[["source", "target"]].to_numpy(dtype=str), axis=1)
-    counts = (pd.DataFrame(
-        {
-            "u": endpoints[:, 0],
-            "v": endpoints[:, 1],
-            "n_positive": (events["sentiment"].to_numpy() == 1).astype(int),
-            "n_negative": (events["sentiment"].to_numpy() == -1).astype(int)
-        }
-    )
-    .groupby(["u", "v"], sort=True)
-    .sum()
+    counts = (
+        pd.DataFrame(
+            {
+                "u": endpoints[:, 0],
+                "v": endpoints[:, 1],
+                "n_positive": (events["sentiment"].to_numpy() == 1).astype(int),
+                "n_negative": (events["sentiment"].to_numpy() == -1).astype(int),
+            }
+        )
+        .groupby(["u", "v"], sort=True)
+        .sum()
     )
 
     graph = nx.Graph()
@@ -93,7 +98,7 @@ def aggregate_edges(interactions: pd.DataFrame) -> nx.Graph:
             v,
             n_positive=int(n_positive),
             n_negative=int(n_negative),
-            sign = 1 if n_positive > n_negative else -1
+            sign=1 if n_positive > n_negative else -1,
         )
 
     for node in graph:
