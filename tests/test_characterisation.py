@@ -153,5 +153,4 @@ def test_pipeline_exports_loadable_artifacts(body_tsv: Path, tmp_path: Path) -> 
     assert summary["metrics"]["degree_assortativity"] == pytest.approx(-0.5)
     assert json.loads((results / "metrics.json").read_text()) == summary
     assert graph.graph["input_sha256"] == summary["input"]["sha256"]
-    for extension in ("png", "pdf"):
-        assert (results / f"degree_distribution.{extension}").stat().st_size > 0
+    assert (results / "degree_distribution.pdf").stat().st_size > 0

@@ -30,7 +30,7 @@ def main() -> None:
         "--min-interactions",
         type=int,
         default=100,
-        help="Original activity threshold (default: 100)"
+        help="Original activity threshold (default: 100)",
     )
     analysis.add_argument("--seed", type=int, default=42)
     analysis.add_argument("--processed_dir", type=Path, default=Path("data/processed"))
@@ -51,7 +51,7 @@ def main() -> None:
                 min_interactions=args.min_interactions,
                 seed=args.seed,
                 processed_dir=args.processed_dir,
-                results_dir=args.results_dir
+                results_dir=args.results_dir,
             )
         else:
             print(f"Unknown command supplied: {args.command}")
