@@ -44,7 +44,7 @@
        * Degree Centrality (\$d\_i\$)  
        * Shortest-Path Betweenness Centrality (\$B\_i\$)  
        * Eigenvector Centrality (\$x\_i\$)  
-       * **Dr. Wang’s Node Leverage Centrality (\$l\_{ni}\$):** \$\$l\_{ni} \= \\frac{1}{d\_i} \\sum\_{j \\in \\mathcal{N}\_i} \\frac{d\_i \- d\_j}{d\_i \+ d\_j}\$\$  
+       * **Node Leverage Centrality (\$l\_{ni}\$):** \$\$l\_{ni} \= \\frac{1}{d\_i} \\sum\_{j \\in \\mathcal{N}\_i} \\frac{d\_i \- d\_j}{d\_i \+ d\_j}\$\$  
   2. **ICO Intervention Simulator:**  
      * Extend Daniel's steady-state simulation to seed a budget fraction \$\\Phi\$ of nodes as permanent, unchangeable contrarians (\$\\sigma \= \+1\$).  
      * Track the decay/collapse of the opposing cluster (\$S\_1\$) as a function of contrarian budget \$\\Phi\$.  
@@ -52,7 +52,7 @@
      * Run baseline intervention comparisons on the unsigned network for:  
        1. *Random Selection*  
        2. *Degree Targeting* (Hub targeting)  
-       3. *Dr. Wang’s Leverage Centrality Targeting*  
+       3. *Leverage Centrality Targeting*  
      * Generate initial plots showing the destruction of majority opinion clusters as \$\\Phi\$ increases, verifying whether high-leverage nodes outperform simple high-degree hubs.  
   2. **Formalization of Phase 2 Formulations:**  
      * Mathematically formalize the planned novel extension metrics for the presentation:  
@@ -65,5 +65,5 @@
 | :---- | :---- | :---- |
 | **Jacek** | Raw TSV parsing, core subgraph extraction, signed edge collapse, degree fitting, modularity, assortativity, and spectral metrics (\$\\lambda\_1(A), a(G)\$). | **Slides 1, 2, 3** (Motivation, Data Ingestion, Network Characterization) |
 | **Daniel** | Synchronous NCO simulation engine, unsigned baseline, signed reactance model, sweep experiments, and phase transition plots (\$s\_1\$ vs. \$f\$). | **Slides 4, 5** (Opinion Process Modeling, Phase Transition Results) |
-| **Polly** | Centrality profiling (Degree, Betweenness, Dr. Wang's Leverage \$l\_{ni}\$), ICO intervention engine, strategy comparison curves (\$S\_1\$ vs. \$\\Phi\$), and Phase 2 methodology formalization. | **Slides 6, 7, 8** (ICO Intervention, Initial Strategy Results, Phase 2 Roadmap) |
+| **Polly** | Centrality profiling (Degree, Betweenness, Leverage \$l\_{ni}\$), ICO intervention engine, strategy comparison curves (\$S\_1\$ vs. \$\\Phi\$), and Phase 2 methodology formalization. | **Slides 6, 7, 8** (ICO Intervention, Initial Strategy Results, Phase 2 Roadmap) |
 

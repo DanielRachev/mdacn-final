@@ -68,8 +68,8 @@ Introduce **Inflexible Contrarians** (the ICO model): a budget fraction `Phi` of
   2. *Degree Centrality* (Hub targeting).  
   3. *Betweenness Centrality* (Shortest-path bottlenecks).  
   4. *Eigenvector Centrality* (Connected to well-connected nodes).  
-  5. *Dr. Wang’s Node Leverage Centrality (`l_ni`):* `l_ni = (1/d_i) * sum_{j in N_i} [(d_i - d_j) / (d_i + d_j)]`  
-  6. **Novel Strategy — Signed Leverage Centrality (`l_signed`):** `l_signed(i) = (1/d_i) * sum_{j in N_i} W_ij * max(0, [(d_i - d_j) / (d_i + d_j)])` *Why it is novel:* Adapts Dr. Wang’s leverage metric for signed graphs. It selects high-leverage structural bridges that maintain **predominantly positive ties** into target clusters, maximizing influence while preventing the backfire effect.  
+  5. *Leverage Centrality (`l_ni`):* `l_ni = (1/d_i) * sum_{j in N_i} [(d_i - d_j) / (d_i + d_j)]`  
+  6. **Novel Strategy — Signed Leverage Centrality (`l_signed`):** `l_signed(i) = (1/d_i) * sum_{j in N_i} W_ij * max(0, [(d_i - d_j) / (d_i + d_j)])` *Why it is novel:* Adapts the leverage metric for signed graphs. It selects high-leverage structural bridges that maintain **predominantly positive ties** into target clusters, maximizing influence while preventing the backfire effect.  
   7. **Novel Strategy — Temporal-Activity Bridge Centrality:** Targets nodes that exhibit both high inter-community betweenness and high temporal interaction frequency (`a_i = eta * x_i`), acting before conflict cascades.  
 * **Relating Node Properties to Process Role (Empirical Impact `I_i`):**  
   1. Measure each node's empirical intervention impact:  

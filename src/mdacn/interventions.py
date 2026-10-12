@@ -124,7 +124,7 @@ def _degree_scores(graph: nx.Graph) -> dict[str, float]:
 
 
 def _leverage_scores(graph: nx.Graph) -> dict[str, float]:
-    """Compute Dr. Wang's node leverage centrality on an undirected graph."""
+    """Compute node leverage centrality on an undirected graph."""
     degrees = dict(graph.degree())
     scores: dict[str, float] = {}
     for node in graph:
