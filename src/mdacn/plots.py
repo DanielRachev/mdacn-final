@@ -95,7 +95,8 @@ def plot_phase_transition(results: pd.DataFrame, path: Path) -> None:
                 capsize=3,
                 label=f"{model.capitalize()} (n={len(runs)})",
             )
-        axis.set_title(title)
+        if len(statuses) > 1:
+            axis.set_title(title)
         axis.set_xlabel("Initial negative fraction f")
         axis.set_xlim(0, 1)
         axis.grid(alpha=0.2)
@@ -105,12 +106,7 @@ def plot_phase_transition(results: pd.DataFrame, path: Path) -> None:
             axis.legend()
     axes[0].set_ylim(lower - 0.05, upper + 0.05)
     axes[0].set_ylabel("Final negative fraction")
-    cycles = int((results["stop_reason"] == "limit_cycle").sum())
-    limited = int((results["stop_reason"] == "max_steps").sum())
-    fig.suptitle(
-        "Unsigned versus signed NCO\n"
-        f"Mean ± sample standard deviation; cycles: {cycles}, update-limit runs: {limited}"
-    )
+    fig.suptitle("Unsigned versus signed NCO")
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
