@@ -73,7 +73,8 @@ def aggregate_edges(interactions: pd.DataFrame) -> nx.Graph:
     """Owner: Jacek. Return a simple undirected graph of non-self interactions.
 
     Each edge records n_positive, n_negative, and sign across both directions.
-    Its sign is +1 when n_positive >= n_negative, and -1 otherwise.
+    Its sign is the sign of n_positive - n_negative. Equal counts give sign 0;
+    the edge remains in the unsigned topology but has no signed influence.
     """
     events = interactions.loc[interactions["source"] != interactions["target"]]
     endpoints = np.sort(events[["source", "target"]].to_numpy(dtype=str), axis=1)
@@ -99,7 +100,7 @@ def aggregate_edges(interactions: pd.DataFrame) -> nx.Graph:
             v,
             n_positive=int(n_positive),
             n_negative=int(n_negative),
-            sign=1 if n_positive >= n_negative else -1,
+            sign=int(np.sign(n_positive - n_negative)),
         )
 
     for node in graph:
@@ -151,8 +152,8 @@ def build_matrices(graph: nx.Graph) -> NetworkMatrices:
     """Owner: Jacek. Return binary adjacency and signed adjacency in one node order."""
     if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
         raise ValueError("Matrices require a simple undirected graph without self loops")
-    if any(edge.get("sign") not in (-1, 1) for _, _, edge in graph.edges(data=True)):
-        raise ValueError("Every edge must have a sign of -1 or +1 (for now?)")
+    if any(edge.get("sign") not in (-1, 0, 1) for _, _, edge in graph.edges(data=True)):
+        raise ValueError("Every edge must have a sign of -1, 0, or +1")
 
     nodes = tuple(sorted(graph))
     if not nodes:
@@ -164,6 +165,7 @@ def build_matrices(graph: nx.Graph) -> NetworkMatrices:
     signed = csr_matrix(
         nx.to_scipy_sparse_array(graph, nodelist=nodes, weight="sign", dtype=float, format="csr")
     )
+    signed.eliminate_zeros()
     return NetworkMatrices(nodes, unsigned, signed)
 
 

@@ -163,8 +163,3 @@ When Subreddit `A` links to Subreddit `B` multiple times across the observation 
 2. **Aggressor vs. Target Role (Asymmetry):** Calculate whether a community primarily initiates hostile links (outbound negative) or receives them (inbound negative): `Role(i) = [d_out_neg(i) - d_in_neg(i)] / [d_out_neg(i) + d_in_neg(i)]` Aggressors start as `-1`; targets/bystanders start as `+1`.  
 3. **Synthetic Fraction Sweep (`f in [0, 1]`):** Randomly assign a fraction `f` of nodes to `-1` and `(1 - f)` to `+1`. Sweep `f` from `0.1` to `0.9` to produce the theoretical phase transition plots shown in Lecture 4 (Slide 34).  
 4. **Topic-Specific Seeds (e.g., Political Polarization):** Filter the active subgraph to political subreddits (e.g., subreddits within 1 hop of `r/politics` and `r/conservative`). Initialize based on known community leanings (Democrat \= `+1`, Republican \= `-1`), using negative links as cross-party hostility.
-
-Tuesday: Daniel, Jacek, Polly   
-Final: Antreas, Georgi, Jakub
-
-Use subreddit embedding for the initial state (?) \- http\://snap.stanford.edu/data/web-RedditEmbeddings.html
