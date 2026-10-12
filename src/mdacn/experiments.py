@@ -6,6 +6,13 @@ import pandas as pd
 
 from mdacn.contracts import NetworkMatrices
 from mdacn.dynamics import initialize_opinions, simulate_nco
+from mdacn.interventions import (
+    _degree_scores,
+    _leverage_scores,
+    opposing_cluster_size,
+    select_contrarians,
+    simulate_ico,
+)
 
 
 def run_fraction_sweep(
@@ -83,4 +90,56 @@ def run_intervention_sweep(
     cluster size and stop status. Seeds and baseline states support comparison
     across strategies.
     """
-    raise NotImplementedError("Polly: run_intervention_sweep")
+    if isinstance(realizations, bool) or not isinstance(realizations, int) or realizations < 1:
+        raise ValueError("realizations must be a positive integer")
+    budgets = tuple(budgets)
+    if not budgets or not all(np.isfinite(b) and 0 <= b <= 1 for b in budgets):
+        raise ValueError("budgets must be a nonempty sequence of finite values in [0, 1]")
+    if not np.isfinite(initial_negative_fraction) or not 0 <= initial_negative_fraction <= 1:
+        raise ValueError("initial_negative_fraction must be finite and in [0, 1]")
+    if len(network.nodes) != len(set(network.nodes)):
+        raise ValueError("network nodes must be unique")
+
+    degree_scores = _degree_scores(graph)
+    leverage_scores = _leverage_scores(graph)
+    strategies = ("random", "degree", "leverage")
+    seeds = np.random.SeedSequence(seed).spawn(len(budgets) * realizations)
+
+    rows = []
+    for budget_index, budget in enumerate(budgets):
+        for realization in range(realizations):
+            initial_seed = int(seeds[budget_index * realizations + realization].generate_state(1)[0])
+            initial = initialize_opinions(len(network.nodes), initial_negative_fraction, seed=initial_seed)
+            for strategy in strategies:
+                score_map = {"degree": degree_scores, "leverage": leverage_scores}.get(strategy)
+                contrarians = select_contrarians(
+                    network.nodes,
+                    budget,
+                    strategy=strategy,
+                    seed=initial_seed + realization + len(strategy),
+                    scores=score_map,
+                )
+                result = simulate_ico(
+                    network.unsigned,
+                    initial,
+                    nodes=network.nodes,
+                    contrarians=contrarians,
+                    max_steps=max_steps,
+                )
+                rows.append(
+                    {
+                        "strategy": strategy,
+                        "budget": budget,
+                        "realization": realization,
+                        "seed": seed,
+                        "initial_seed": initial_seed,
+                        "initial_negative_fraction": float(np.mean(initial == -1)),
+                        "cluster_size": int(opposing_cluster_size(graph, network.nodes, result.final_state)),
+                        "steps": result.steps,
+                        "stop_reason": result.stop_reason,
+                        "cycle_length": result.cycle_length,
+                    }
+                )
+    results = pd.DataFrame(rows)
+    results["cycle_length"] = results["cycle_length"].astype("Int64")
+    return results
