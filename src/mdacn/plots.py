@@ -122,4 +122,36 @@ def plot_intervention_comparison(results: pd.DataFrame, path: Path) -> None:
     Compare random, degree, and leverage targeting with realization variability.
     Identify cycles and update-limit runs separately from steady-state results.
     """
-    raise NotImplementedError("Polly: plot_intervention_comparison")
+    if results.empty:
+        raise ValueError("No intervention results to plot")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    summary = (
+        results.assign(cluster_fraction=lambda frame: frame["cluster_size"] / frame["n_nodes"])
+        .groupby(["strategy", "budget"], as_index=False)["cluster_fraction"]
+        .agg(["mean", "std"])
+        .rename(columns={"mean": "cluster_fraction_mean", "std": "cluster_fraction_std"})
+    )
+    fig, axis = plt.subplots(figsize=(7, 5.2))
+    for strategy, color in (("random", "tab:blue"), ("degree", "tab:orange"), ("leverage", "tab:green")):
+        subset = summary.loc[summary["strategy"] == strategy]
+        if subset.empty:
+            continue
+        axis.errorbar(
+            subset["budget"],
+            subset["cluster_fraction_mean"],
+            yerr=subset["cluster_fraction_std"].fillna(0),
+            fmt="o-",
+            color=color,
+            capsize=3,
+            label=strategy.capitalize(),
+        )
+    axis.set_xlabel("Contrarian budget Phi")
+    axis.set_ylabel("Opposing cluster fraction S₁/N")
+    axis.set_xlim(0, 1)
+    axis.set_ylim(0, 1)
+    axis.grid(alpha=0.2)
+    axis.legend()
+    fig.suptitle("Intervention comparison")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)

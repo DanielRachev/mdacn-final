@@ -17,7 +17,7 @@ from mdacn.data import aggregate_edges, build_matrices, export_graph
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.experiments import run_fraction_sweep
 from mdacn.nco_pipeline import run_nco_experiment
-from mdacn.plots import plot_phase_transition
+from mdacn.plots import plot_intervention_comparison, plot_phase_transition
 
 
 def test_paired_sweep_reproducibility_and_replay():
@@ -132,4 +132,32 @@ def test_plot_separates_stop_statuses(tmp_path, monkeypatch):
     )
     plot_phase_transition(results, tmp_path / "statuses.png")
     assert calls == [[0.1], [0.8], [0.4]]
+    assert not plt.get_fignums()
+
+
+def test_plot_intervention_comparison_summarises_strategy_curves(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+    from matplotlib.axes import Axes
+
+    calls = []
+    original = Axes.errorbar
+
+    def capture(self, x, y, **kwargs):
+        calls.append((list(x), list(y), kwargs.get("label")))
+        return original(self, x, y, **kwargs)
+
+    monkeypatch.setattr(Axes, "errorbar", capture)
+    results = pd.DataFrame(
+        {
+            "strategy": ["random", "degree", "leverage", "random", "degree", "leverage"],
+            "budget": [0.2, 0.2, 0.2, 0.4, 0.4, 0.4],
+            "cluster_size": [10, 8, 6, 4, 2, 1],
+            "n_nodes": [20, 20, 20, 20, 20, 20],
+        }
+    )
+
+    plot_intervention_comparison(results, tmp_path / "intervention.png")
+
+    assert len(calls) == 3
+    assert {call[2] for call in calls} == {"Random", "Degree", "Leverage"}
     assert not plt.get_fignums()
