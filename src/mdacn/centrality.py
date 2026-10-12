@@ -5,17 +5,19 @@ import networkx as nx
 
 def degree_centrality(graph: nx.Graph) -> dict[str, float]:
     """Owner: Polly. Return degree scores d_i, keyed by subreddit."""
-    raise NotImplementedError("Polly: degree_centrality")
+    return {node: float(score) for node, score in nx.degree_centrality(graph).items()}
 
 
 def betweenness_centrality(graph: nx.Graph) -> dict[str, float]:
     """Owner: Polly. Return shortest-path betweenness scores, keyed by subreddit."""
-    raise NotImplementedError("Polly: betweenness_centrality")
+    return {node: float(score) for node, score in nx.betweenness_centrality(graph).items()}
 
 
 def eigenvector_centrality(graph: nx.Graph) -> dict[str, float]:
     """Owner: Polly. Return eigenvector centrality scores, keyed by subreddit."""
-    raise NotImplementedError("Polly: eigenvector_centrality")
+    if graph.number_of_nodes() == 0:
+        return {}
+    return {node: float(score) for node, score in nx.eigenvector_centrality(graph).items()}
 
 
 def leverage_centrality(graph: nx.Graph) -> dict[str, float]:
@@ -23,7 +25,19 @@ def leverage_centrality(graph: nx.Graph) -> dict[str, float]:
 
     The metric measures a node's degree advantage relative to its neighbors.
     """
-    raise NotImplementedError("Polly: leverage_centrality")
+    degrees = dict(graph.degree())
+    scores: dict[str, float] = {}
+    for node in graph:
+        degree = degrees[node]
+        if degree == 0:
+            scores[node] = 0.0
+            continue
+        total = sum(
+            (degree - degrees[neighbor]) / (degree + degrees[neighbor])
+            for neighbor in graph.neighbors(node)
+        )
+        scores[node] = total / degree
+    return scores
 
 
 def rank_nodes(scores: dict[str, float]) -> list[str]:
@@ -31,4 +45,4 @@ def rank_nodes(scores: dict[str, float]) -> list[str]:
 
     Equal scores have a deterministic order.
     """
-    raise NotImplementedError("Polly: rank_nodes")
+    return [node for node, _ in sorted(scores.items(), key=lambda item: (-item[1], item[0]))]

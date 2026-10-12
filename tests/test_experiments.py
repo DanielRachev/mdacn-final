@@ -15,9 +15,9 @@ import pytest
 
 from mdacn.data import aggregate_edges, build_matrices, export_graph
 from mdacn.dynamics import initialize_opinions, simulate_nco
-from mdacn.experiments import run_fraction_sweep
+from mdacn.experiments import run_fraction_sweep, run_intervention_sweep
 from mdacn.nco_pipeline import run_nco_experiment
-from mdacn.plots import plot_phase_transition
+from mdacn.plots import plot_intervention_comparison, plot_phase_transition
 
 
 def test_paired_sweep_reproducibility_and_replay():
@@ -132,4 +132,93 @@ def test_plot_separates_stop_statuses(tmp_path, monkeypatch):
     )
     plot_phase_transition(results, tmp_path / "statuses.png")
     assert calls == [[0.1], [0.8], [0.4]]
+    assert not plt.get_fignums()
+
+
+def test_plot_intervention_comparison_summarises_strategy_curves(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+    from matplotlib.axes import Axes
+
+    calls = []
+    original = Axes.errorbar
+
+    def capture(self, x, y, **kwargs):
+        calls.append((list(x), list(y), kwargs.get("label")))
+        return original(self, x, y, **kwargs)
+
+    monkeypatch.setattr(Axes, "errorbar", capture)
+    results = pd.DataFrame(
+        {
+            "strategy": ["random", "degree", "leverage", "random", "degree", "leverage"],
+            "budget": [0.2, 0.2, 0.2, 0.4, 0.4, 0.4],
+            "cluster_size": [10, 8, 6, 4, 2, 1],
+            "n_nodes": [20, 20, 20, 20, 20, 20],
+            "stop_reason": ["steady_state"] * 6,
+        }
+    )
+
+    plot_intervention_comparison(results, tmp_path / "intervention.png")
+
+    assert len(calls) == 3
+    assert {call[2] for call in calls} == {"Random", "Degree", "Leverage"}
+    assert not plt.get_fignums()
+
+
+def test_intervention_sweep_plots_without_extra_columns(tmp_path):
+    import matplotlib.pyplot as plt
+
+    graph = nx.path_graph(["a", "b", "c", "d"])
+    nx.set_edge_attributes(graph, 1, "sign")
+    network = build_matrices(graph)
+    kwargs = dict(budgets=(0, 0.25, 1), initial_negative_fraction=0.75, realizations=2, seed=3)
+    results = run_intervention_sweep(graph, network, **kwargs)
+    pd.testing.assert_frame_equal(results, run_intervention_sweep(graph, network, **kwargs))
+    assert (results["n_nodes"] == 4).all()
+    assert (results.loc[results["budget"] == 1, "cluster_size"] == 0).all()
+    path = tmp_path / "intervention.png"
+    plot_intervention_comparison(results, path)
+    assert path.stat().st_size > 1000
+    assert not plt.get_fignums()
+
+
+@pytest.mark.parametrize("include_steady", [True, False])
+def test_intervention_plot_separates_stop_statuses(tmp_path, monkeypatch, include_steady):
+    import matplotlib.pyplot as plt
+    from matplotlib.axes import Axes
+
+    calls = []
+    original = Axes.errorbar
+
+    def capture(self, x, y, **kwargs):
+        calls.append((self, np.asarray(y), np.asarray(kwargs["yerr"])))
+        return original(self, x, y, **kwargs)
+
+    monkeypatch.setattr(Axes, "errorbar", capture)
+    results = pd.DataFrame(
+        {
+            "strategy": ["degree"] * 5,
+            "budget": [0.25, 0.25, 0.25, 0.25, 0.5],
+            "cluster_size": [0, 2, 2, 4, 0],
+            "n_nodes": [4] * 5,
+            "stop_reason": [
+                "steady_state",
+                "steady_state",
+                "limit_cycle",
+                "max_steps",
+                "max_steps",
+            ],
+        }
+    )
+    if not include_steady:
+        results = results.loc[results["stop_reason"] != "steady_state"]
+    plot_intervention_comparison(results, tmp_path / "intervention_statuses.png")
+    expected = (
+        [[0.25, np.nan], [0.5, np.nan], [1, 0]] if include_steady else [[0.5, np.nan], [1, 0]]
+    )
+    assert len(calls) == len(expected)
+    assert len({id(axis) for axis, _, _ in calls}) == len(expected)
+    for (_, values, _), target in zip(calls, expected, strict=True):
+        np.testing.assert_allclose(values, target, equal_nan=True)
+    if include_steady:
+        assert calls[0][2][0] == pytest.approx(np.std([0, 0.5], ddof=1))
     assert not plt.get_fignums()
