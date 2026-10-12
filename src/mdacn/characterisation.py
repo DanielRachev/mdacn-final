@@ -3,9 +3,9 @@
 import networkx as nx
 import numpy as np
 import pandas as pd
-from scipy.sparse import csr_matrix, diags
 from numpy.typing import NDArray
 from scipy.optimize import minimize, minimize_scalar
+from scipy.sparse import csr_matrix, diags
 from scipy.sparse.csgraph import connected_components
 from scipy.sparse.linalg import eigsh
 from scipy.special import zeta
@@ -21,7 +21,7 @@ def degree_distribution(graph: nx.Graph) -> pd.DataFrame:
 
 
 def fitted_degree_probabilities(
-        degrees: NDArray[np.int64], *, model: str, parameter: float, k_min: int
+    degrees: NDArray[np.int64], *, model: str, parameter: float, k_min: int
 ) -> NDArray[np.float64]:
     """Evaluate a fitted discrete PMF on its support"""
     probabilities = np.zeros(degrees.shape, dtype=float)
@@ -37,13 +37,14 @@ def fitted_degree_probabilities(
         raise ValueError(f"Unknown degree modelling model: {model}")
     return probabilities
 
+
 def _ks_distance(
-        degrees: NDArray[np.float64], *, model: str, parameter: float, k_min: int
+    degrees: NDArray[np.float64], *, model: str, parameter: float, k_min: int
 ) -> float:
     """Compare discrete CDF before and after observed degree values"""
     values, counts = np.unique(degrees, return_counts=True)
     empirical_after = np.cumsum(counts) / degrees.size
-    empirical_before = empirical_after - counts/degrees.size
+    empirical_before = empirical_after - counts / degrees.size
 
     if model == "power_law":
         normaliser = zeta(parameter, k_min)
@@ -57,7 +58,7 @@ def _ks_distance(
         raise ValueError(f"Unsupported degree model {model}")
     return max(
         np.max(np.abs(empirical_before - model_before)),
-        np.max(np.abs(empirical_after - model_after))
+        np.max(np.abs(empirical_after - model_after)),
     )
 
 
@@ -84,7 +85,7 @@ def fit_degree_baselines(graph: nx.Graph) -> pd.DataFrame:
                 "log_likelihood": float("nan"),
                 "aic": float("nan"),
                 "ks_distance": float("nan"),
-                "status": "ok"
+                "status": "ok",
             }
         )
 
@@ -116,10 +117,10 @@ def fit_degree_baselines(graph: nx.Graph) -> pd.DataFrame:
         row.update(
             parameter_value=parameter,
             log_likelihood=-float(fit.fun),
-            aic= 2 + 2 * float(fit.fun),
-            ks_distance = _ks_distance(
-                degrees, model=str(row["model"]), parameter=parameter, k_min = k_min
-            )
+            aic=2 + 2 * float(fit.fun),
+            ks_distance=_ks_distance(
+                degrees, model=str(row["model"]), parameter=parameter, k_min=k_min
+            ),
         )
 
     return pd.DataFrame(rows)
@@ -136,9 +137,7 @@ def detect_communities(graph: nx.Graph, *, seed: int) -> dict[str, int]:
     """Owner: Jacek. Return one community label per subreddit."""
     groups = nx.community.louvain_communities(graph, weight=None, seed=seed)
     return {
-        node: label
-        for label, group in
-        enumerate(sorted(groups, key=min)) for node in sorted(group)
+        node: label for label, group in enumerate(sorted(groups, key=min)) for node in sorted(group)
     }
 
 
@@ -197,7 +196,7 @@ def spectral_metrics(adjacency: csr_matrix) -> dict[str, float]:
                 which="SM",
                 v0=rng.normal(size=n_nodes),
                 tol=1e-8,
-                return_eigenvectors=False
+                return_eigenvectors=False,
             )
             connectivity = float(np.sort(eigenvalues)[1])
     return {"spectral_radius": max(0.0, radius), "algebraic_connectivity": max(0.0, connectivity)}

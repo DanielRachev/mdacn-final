@@ -130,12 +130,14 @@ def extract_core(
         if min_interactions is None or min_interactions < 0:
             raise ValueError("activity_lcc requires a non-negative min_interactions")
         nodes = [
-            node for node in graph
+            node
+            for node in graph
             if sum(edge["n_positive"] + edge["n_negative"] for edge in graph[node].values())
             >= min_interactions
         ]
         return largest_component(graph.subgraph(nodes))
     raise ValueError(f"Unknown core method: {method}")
+
 
 def largest_component(graph: nx.Graph) -> nx.Graph:
     """Copy the largest connected component, resolving ties by node name."""
