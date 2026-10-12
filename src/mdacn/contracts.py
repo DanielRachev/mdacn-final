@@ -18,7 +18,8 @@ class NetworkMatrices:
     """Owner: Jacek. Node order and matching unsigned and signed matrices.
 
     Both matrices are square, symmetric, and have a zero diagonal.
-    Node names align with matrix rows and columns.
+    Node names are alphabetical and align with matrix rows and columns.
+    Matrices have float64 values: unsigned entries are 0/1, signed entries 0/+1/-1
     """
 
     nodes: tuple[str, ...]
