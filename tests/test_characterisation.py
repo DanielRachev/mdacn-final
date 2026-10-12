@@ -56,7 +56,7 @@ def test_parsing_and_signed_aggregation(body_tsv: Path) -> None:
     assert len(interactions) == 8
     assert list(interactions.columns) == ["source", "target", "sentiment", "timestamp"]
     assert pd.api.types.is_datetime64_any_dtype(interactions["timestamp"])
-    assert graph["a"]["b"] == {"n_positive": 2, "n_negative": 2, "sign": 1}
+    assert graph["a"]["b"] == {"n_positive": 2, "n_negative": 2, "sign": 0}
     assert graph["a"]["c"]["sign"] == -1
     assert nx.number_of_selfloops(graph) == 0
     assert graph.nodes["alone"]["n_interactions"] == 0
@@ -86,7 +86,9 @@ def test_core_selection_and_graph_matrix_roundtrip(body_tsv: Path, tmp_path: Pat
     index = {node: position for position, node in enumerate(network.nodes)}
     assert network.unsigned[index["a"], index["c"]] == 1
     assert network.signed[index["a"], index["c"]] == -1
-    np.testing.assert_array_equal(network.unsigned.toarray(), np.abs(network.signed.toarray()))
+    assert network.unsigned[index["a"], index["b"]] == 1
+    assert network.signed[index["a"], index["b"]] == 0
+    assert network.signed.nnz == 4
 
     hub = nx.relabel_nodes(nx.star_graph(140), {0: "hub", **{i: f"n{i}" for i in range(1, 141)}})
     nx.set_edge_attributes(hub, 1, "sign")

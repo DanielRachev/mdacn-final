@@ -59,7 +59,7 @@
        * **Signed Leverage Centrality (\$l\_{\\text{signed}}\$)** to prevent backfire effects.  
        * **Sign-Shuffling Null Model** protocols for testing structural placement.
 
-## 3\. Summary of Roles for Phase 1
+## 2\. Summary of Roles for Phase 1
 
 | Team Member | Functional Coding Area | Slide Deck Responsibility |
 | :---- | :---- | :---- |

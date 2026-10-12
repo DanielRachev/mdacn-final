@@ -1,9 +1,10 @@
-"""Commands: python -m mdacn setup / characterise"""
+"""Commands: python -m mdacn setup / characterise / nco."""
 
 import argparse
 from pathlib import Path
 
 from mdacn.data import download_dataset
+from mdacn.nco_pipeline import run_nco_experiment
 from mdacn.pipeline import characterise
 
 DEFAULT_DATASET_PATH = Path("data/raw/soc-RedditHyperlinks-body.tsv")
@@ -33,8 +34,18 @@ def main() -> None:
         help="Original activity threshold (default: 100)",
     )
     analysis.add_argument("--seed", type=int, default=42)
-    analysis.add_argument("--processed_dir", type=Path, default=Path("data/processed"))
+    analysis.add_argument(
+        "--processed-dir", "--processed_dir", type=Path, default=Path("data/processed")
+    )
     analysis.add_argument("--results-dir", type=Path, default=Path("results"))
+
+    nco = commands.add_parser("nco", help="Compare unsigned and signed NCO on the saved core")
+    nco.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
+    nco.add_argument("--results-dir", type=Path, default=Path("results/nco"))
+    nco.add_argument("--fractions", type=float, nargs="+", default=[i / 10 for i in range(1, 10)])
+    nco.add_argument("--realizations", type=int, default=20)
+    nco.add_argument("--seed", type=int, default=0)
+    nco.add_argument("--max-steps", type=int, default=1000)
 
     args = parser.parse_args()
     try:
@@ -52,6 +63,15 @@ def main() -> None:
                 seed=args.seed,
                 processed_dir=args.processed_dir,
                 results_dir=args.results_dir,
+            )
+        elif args.command == "nco":
+            run_nco_experiment(
+                args.graph,
+                results_dir=args.results_dir,
+                fractions=tuple(args.fractions),
+                realizations=args.realizations,
+                seed=args.seed,
+                max_steps=args.max_steps,
             )
         else:
             print(f"Unknown command supplied: {args.command}")
