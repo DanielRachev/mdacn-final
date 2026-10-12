@@ -84,7 +84,9 @@ def simulate_ico(
     contrarian_set = set(contrarians)
     if not set(nodes).issuperset(contrarian_set):
         raise ValueError("contrarians must be a subset of nodes")
-    fixed = np.array([index for index, node in enumerate(nodes) if node in contrarian_set], dtype=int)
+    fixed = np.array(
+        [index for index, node in enumerate(nodes) if node in contrarian_set], dtype=int
+    )
     state[fixed] = 1
 
     history = [state.copy()]

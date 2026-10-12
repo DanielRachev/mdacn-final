@@ -1,9 +1,11 @@
 import networkx as nx
 import numpy as np
 import pandas as pd
+import pytest
 from scipy.sparse import csr_matrix
 
 from mdacn.contracts import NetworkMatrices
+from mdacn.data import build_matrices
 from mdacn.experiments import run_intervention_sweep
 from mdacn.interventions import (
     opposing_cluster_size,
@@ -25,7 +27,9 @@ def test_select_contrarians_handles_random_and_ranked_strategies() -> None:
     assert degree_choice == ("b", "d")
 
     leverage_scores = {"a": 0.2, "b": 0.8, "c": 0.7, "d": 0.4}
-    leverage_choice = select_contrarians(nodes, 0.75, strategy="leverage", seed=7, scores=leverage_scores)
+    leverage_choice = select_contrarians(
+        nodes, 0.75, strategy="leverage", seed=7, scores=leverage_scores
+    )
     assert leverage_choice == ("b", "c", "d")
 
 
@@ -79,3 +83,66 @@ def test_run_intervention_sweep_records_cluster_decay() -> None:
     assert set(results.columns) >= {"strategy", "budget", "cluster_size", "stop_reason", "steps"}
     assert len(results) == 3
     assert set(results["strategy"]) == {"random", "degree", "leverage"}
+
+
+def test_intervention_starts_from_shared_settled_baseline(monkeypatch):
+    import mdacn.experiments as experiments
+
+    graph = nx.path_graph(["a", "b", "c", "d"])
+    nx.set_edge_attributes(graph, 1, "sign")
+    network = build_matrices(graph)
+    initial = np.array([-1, -1, 1, -1], dtype=np.int8)
+    monkeypatch.setattr(experiments, "initialize_opinions", lambda *args, **kwargs: initial.copy())
+    starts = []
+
+    def capture(adjacency, state, **kwargs):
+        starts.append(state.copy())
+        return simulate_ico(adjacency, state, **kwargs)
+
+    monkeypatch.setattr(experiments, "simulate_ico", capture)
+    results = run_intervention_sweep(
+        graph,
+        network,
+        budgets=(0, 0.25),
+        initial_negative_fraction=0.75,
+        realizations=1,
+        max_steps=20,
+    )
+
+    assert len(starts) == 6
+    assert all(state.tolist() == [-1, -1, -1, -1] for state in starts)
+    assert (results["baseline_negative_fraction"] == 1).all()
+    assert (results["baseline_steps"] == 2).all()
+    assert (results.loc[results["budget"] == 0, "cluster_size"] == 4).all()
+    targeted = results.loc[(results["budget"] == 0.25) & (results["strategy"] == "degree")]
+    assert targeted["cluster_size"].tolist() == [2]
+    assert initial.tolist() == [-1, -1, 1, -1]
+
+
+@pytest.mark.parametrize(
+    ("max_steps", "expected_status"), [(0, "max_steps"), (1, "max_steps"), (20, "limit_cycle")]
+)
+def test_intervention_rejects_nonsteady_baseline(monkeypatch, max_steps, expected_status):
+    import mdacn.experiments as experiments
+
+    graph = nx.complete_bipartite_graph(3, 3)
+    nx.set_edge_attributes(graph, 1, "sign")
+    network = build_matrices(graph)
+    initial = np.array([-1, -1, -1, 1, 1, 1], dtype=np.int8)
+    monkeypatch.setattr(experiments, "initialize_opinions", lambda *args, **kwargs: initial.copy())
+
+    def unexpected_intervention(*args, **kwargs):
+        pytest.fail("Intervention must not start from a nonsteady baseline")
+
+    monkeypatch.setattr(experiments, "simulate_ico", unexpected_intervention)
+    with pytest.raises(
+        RuntimeError, match=f"Baseline did not reach a steady state: {expected_status}"
+    ):
+        run_intervention_sweep(
+            graph,
+            network,
+            budgets=(0.25,),
+            initial_negative_fraction=0.5,
+            realizations=1,
+            max_steps=max_steps,
+        )

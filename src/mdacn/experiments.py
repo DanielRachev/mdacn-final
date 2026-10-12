@@ -88,7 +88,9 @@ def run_intervention_sweep(
 
     Return one row per strategy, budget, and realization, including opposing
     cluster size and stop status. Seeds and baseline states support comparison
-    across strategies.
+    across strategies. Settle each baseline with unsigned NCO before intervention.
+    Raise RuntimeError if a baseline cycles or reaches the update limit; neither
+    is a steady state. max_steps applies separately to both simulation stages.
     """
     if isinstance(realizations, bool) or not isinstance(realizations, int) or realizations < 1:
         raise ValueError("realizations must be a positive integer")
@@ -108,8 +110,20 @@ def run_intervention_sweep(
     rows = []
     for budget_index, budget in enumerate(budgets):
         for realization in range(realizations):
-            initial_seed = int(seeds[budget_index * realizations + realization].generate_state(1)[0])
-            initial = initialize_opinions(len(network.nodes), initial_negative_fraction, seed=initial_seed)
+            initial_seed = int(
+                seeds[budget_index * realizations + realization].generate_state(1)[0]
+            )
+            initial = initialize_opinions(
+                len(network.nodes), initial_negative_fraction, seed=initial_seed
+            )
+            baseline = simulate_nco(
+                network.unsigned, initial, model="unsigned", max_steps=max_steps
+            )
+            if baseline.stop_reason != "steady_state":
+                raise RuntimeError(
+                    f"Baseline did not reach a steady state: {baseline.stop_reason} "
+                    f"(budget={budget}, realization={realization}, initial_seed={initial_seed})"
+                )
             for strategy in strategies:
                 score_map = {"degree": degree_scores, "leverage": leverage_scores}.get(strategy)
                 contrarians = select_contrarians(
@@ -121,7 +135,7 @@ def run_intervention_sweep(
                 )
                 result = simulate_ico(
                     network.unsigned,
-                    initial,
+                    baseline.final_state,
                     nodes=network.nodes,
                     contrarians=contrarians,
                     max_steps=max_steps,
@@ -133,8 +147,13 @@ def run_intervention_sweep(
                         "realization": realization,
                         "seed": seed,
                         "initial_seed": initial_seed,
+                        "n_nodes": len(network.nodes),
+                        "baseline_steps": baseline.steps,
+                        "baseline_negative_fraction": float(np.mean(baseline.final_state == -1)),
                         "initial_negative_fraction": float(np.mean(initial == -1)),
-                        "cluster_size": int(opposing_cluster_size(graph, network.nodes, result.final_state)),
+                        "cluster_size": int(
+                            opposing_cluster_size(graph, network.nodes, result.final_state)
+                        ),
                         "steps": result.steps,
                         "stop_reason": result.stop_reason,
                         "cycle_length": result.cycle_length,

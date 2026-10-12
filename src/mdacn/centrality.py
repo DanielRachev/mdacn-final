@@ -32,7 +32,10 @@ def leverage_centrality(graph: nx.Graph) -> dict[str, float]:
         if degree == 0:
             scores[node] = 0.0
             continue
-        total = sum((degree - degrees[neighbor]) / (degree + degrees[neighbor]) for neighbor in graph.neighbors(node))
+        total = sum(
+            (degree - degrees[neighbor]) / (degree + degrees[neighbor])
+            for neighbor in graph.neighbors(node)
+        )
         scores[node] = total / degree
     return scores
 
