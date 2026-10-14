@@ -145,5 +145,6 @@ def characterise(
 
     (results_dir / "metrics.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
     plot_degree_distribution(distribution, fits, results_dir / "degree_distribution.pdf")
+    plot_degree_distribution(distribution, fits, results_dir / "degree_distribution.png")
     print(f"Saved graphs and matrices to {processed_dir}, and metrics and plots to {results_dir}")
     return summary
