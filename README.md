@@ -12,6 +12,7 @@ uv sync --locked
 uv run python -m mdacn setup
 uv run python -m mdacn characterise --k 10 --seed 0
 uv run python -m mdacn nco --realizations 20 --seed 0 --max-steps 1000
+uv run python -m mdacn sign-shuffle --realizations 20 --seed 0 --max-steps 1000
 ```
 
 | Command | Action |
@@ -19,6 +20,7 @@ uv run python -m mdacn nco --realizations 20 --seed 0 --max-steps 1000
 | `setup` | Download the body TSV; reuse an existing file. |
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
 | `nco` | Compare unsigned and signed dynamics on the exported core. |
+| `sign-shuffle` | Compare empirical signed dynamics with shuffled edge signs on the same core. |
 
 Alternative core: filter by original incident interaction count, then keep the
 largest connected component.
@@ -54,6 +56,7 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 | `results/metrics.json` | Network metrics and input metadata. |
 | `results/degree_distribution.csv`, `degree_fits.csv`, `degree_distribution.pdf` | Degree distribution, fits, and figure. |
 | `results/nco/` | Simulation results, summaries, figures, and metadata. |
+| `results/sign_shuffle/` | Sign-shuffle results, summaries, PNG/PDF figures, metadata, and node order. |
 
 Generated files are ignored by Git. Reruns replace outputs in the selected
 directories. Rerun preprocessing after changing data rules.
