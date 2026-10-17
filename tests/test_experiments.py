@@ -170,6 +170,8 @@ def test_sign_shuffle_pipeline_and_cli(tmp_path):
         check=True,
     )
     assert "Saved sign-shuffle results" in completed.stdout
+    assert "Sign shuffle:" in completed.stderr
+    assert "2/2" in completed.stderr
     cli_results = pd.read_csv(tmp_path / "cli_sign_shuffle" / "sign_shuffle_sweep.csv")
     assert len(cli_results) == 4
     assert set(cli_results["model"]) == {"empirical", "sign_shuffled"}
@@ -285,6 +287,33 @@ def test_sign_shuffle_fraction_sweep_is_reproducible_and_plots(tmp_path):
     plot_sign_shuffle_phase_transition(results, path)
     assert path.stat().st_size > 1000
     assert not plt.get_fignums()
+
+
+@pytest.mark.parametrize("signs", [(1, -1, 0, 1, -1, 0), (0,) * 6, (-1,) * 6, ()])
+def test_sign_shuffle_fraction_sweep_matches_graph_replay(signs):
+    nodes = ["d", "a", "c", "b"]
+    graph = nx.complete_graph(nodes) if signs else nx.empty_graph(nodes)
+    graph.add_node("isolated")
+    for (u, v), sign in zip(graph.edges(), signs, strict=True):
+        graph[u][v]["sign"] = sign
+    network = build_matrices(graph)
+    results = run_sign_shuffle_fraction_sweep(
+        graph, fractions=(0, 0.4, 1), realizations=2, seed=7, max_steps=10
+    )
+
+    for row in results.itertuples(index=False):
+        initial = initialize_opinions(len(network.nodes), row.f, seed=row.initial_seed)
+        matrix = network.signed
+        if row.model == "sign_shuffled":
+            matrix = build_matrices(shuffle_edge_signs(graph, seed=row.shuffle_seed)).signed
+        replay = simulate_nco(matrix, initial, model="signed", max_steps=10)
+        assert row.final_negative_fraction == np.mean(replay.final_state == -1)
+        assert row.steps == replay.steps
+        assert row.stop_reason == replay.stop_reason
+        if replay.cycle_length is None:
+            assert pd.isna(row.cycle_length)
+        else:
+            assert row.cycle_length == replay.cycle_length
 
 
 def test_intervention_sweep_plots_without_extra_columns(tmp_path):

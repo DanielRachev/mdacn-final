@@ -3,6 +3,8 @@
 import networkx as nx
 import numpy as np
 import pandas as pd
+from scipy.sparse import csr_matrix
+from tqdm import tqdm
 
 from mdacn.contracts import NetworkMatrices
 from mdacn.data import build_matrices
@@ -192,6 +194,7 @@ def run_sign_shuffle_fraction_sweep(
     realizations: int = 20,
     seed: int = 0,
     max_steps: int = 1000,
+    show_progress: bool = False,
 ) -> pd.DataFrame:
     """Compare the empirical signed network against a sign-shuffled null model.
 
@@ -210,41 +213,52 @@ def run_sign_shuffle_fraction_sweep(
     n_nodes = len(empirical.nodes)
     if not n_nodes:
         raise ValueError("graph must have at least one node")
+    node_index = {node: index for index, node in enumerate(empirical.nodes)}
+    # Preserve edge order so shuffle seeds still replay through shuffle_edge_signs.
+    edges = list(graph.edges(data="sign"))
+    sources = np.array([node_index[u] for u, _, _ in edges], dtype=np.intp)
+    targets = np.array([node_index[v] for _, v, _ in edges], dtype=np.intp)
+    edge_rows = np.concatenate((sources, targets))
+    edge_columns = np.concatenate((targets, sources))
+    edge_signs = np.array([sign for _, _, sign in edges], dtype=np.int8)
     seeds = np.random.SeedSequence(seed).spawn(len(fractions) * realizations)
     rows = []
 
-    for fraction_index, fraction in enumerate(fractions):
-        for realization in range(realizations):
-            iteration_seed = int(
-                seeds[fraction_index * realizations + realization].generate_state(1)[0]
-            )
-            rng = np.random.default_rng(iteration_seed)
-            initial_seed = int(rng.integers(0, np.iinfo(np.int32).max))
-            shuffle_seed = int(rng.integers(0, np.iinfo(np.int32).max))
-            initial = initialize_opinions(n_nodes, fraction, seed=initial_seed)
-            shuffled = build_matrices(shuffle_edge_signs(graph, seed=shuffle_seed))
+    for run_index in tqdm(
+        range(len(seeds)), desc="Sign shuffle", unit="pair", disable=not show_progress
+    ):
+        fraction_index, realization = divmod(run_index, realizations)
+        fraction = fractions[fraction_index]
+        iteration_seed = int(seeds[run_index].generate_state(1)[0])
+        rng = np.random.default_rng(iteration_seed)
+        initial_seed = int(rng.integers(0, np.iinfo(np.int32).max))
+        shuffle_seed = int(rng.integers(0, np.iinfo(np.int32).max))
+        initial = initialize_opinions(n_nodes, fraction, seed=initial_seed)
+        shuffled_signs = np.random.default_rng(shuffle_seed).permutation(edge_signs)
+        shuffled = csr_matrix(
+            (np.tile(shuffled_signs, 2), (edge_rows, edge_columns)),
+            shape=empirical.signed.shape,
+            dtype=float,
+        )
 
-            for model, matrix in (
-                ("empirical", empirical.signed),
-                ("sign_shuffled", shuffled.signed),
-            ):
-                result = simulate_nco(matrix, initial, model="signed", max_steps=max_steps)
-                rows.append(
-                    {
-                        "model": model,
-                        "f": fraction,
-                        "realization": realization,
-                        "seed": seed,
-                        "initial_seed": initial_seed,
-                        "shuffle_seed": shuffle_seed,
-                        "n_nodes": n_nodes,
-                        "initial_negative_fraction": float(np.mean(initial == -1)),
-                        "final_negative_fraction": float(np.mean(result.final_state == -1)),
-                        "steps": result.steps,
-                        "stop_reason": result.stop_reason,
-                        "cycle_length": result.cycle_length,
-                    }
-                )
+        for model, matrix in (("empirical", empirical.signed), ("sign_shuffled", shuffled)):
+            result = simulate_nco(matrix, initial, model="signed", max_steps=max_steps)
+            rows.append(
+                {
+                    "model": model,
+                    "f": fraction,
+                    "realization": realization,
+                    "seed": seed,
+                    "initial_seed": initial_seed,
+                    "shuffle_seed": shuffle_seed,
+                    "n_nodes": n_nodes,
+                    "initial_negative_fraction": float(np.mean(initial == -1)),
+                    "final_negative_fraction": float(np.mean(result.final_state == -1)),
+                    "steps": result.steps,
+                    "stop_reason": result.stop_reason,
+                    "cycle_length": result.cycle_length,
+                }
+            )
 
     results = pd.DataFrame(rows)
     results["cycle_length"] = results["cycle_length"].astype("Int64")

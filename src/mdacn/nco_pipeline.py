@@ -92,6 +92,7 @@ def run_sign_shuffle_experiment(
         realizations=realizations,
         seed=seed,
         max_steps=max_steps,
+        show_progress=True,
     )
     results_dir.mkdir(parents=True, exist_ok=True)
     results.to_csv(results_dir / "sign_shuffle_sweep.csv", index=False)

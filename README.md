@@ -31,6 +31,10 @@ uv run python -m mdacn characterise --core-method activity_lcc --min-interaction
 
 Use each command's `--help` for input paths, output paths, and experiment options.
 
+`sign-shuffle` shows a progress bar with elapsed time and ETA. Each step completes
+one empirical/shuffled pair. The sweep reuses the core topology to avoid copying
+the graph for each realization.
+
 ## Data and methods
 
 - Undirected aggregation merges both directions and removes self-links.
