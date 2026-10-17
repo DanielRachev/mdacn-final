@@ -129,9 +129,13 @@ def run_sign_shuffle_experiment(
     (results_dir / "metadata.json").write_text(
         json.dumps(metadata, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
-    (results_dir / "nodes.json").write_text(json.dumps(tuple(sorted(graph))) + "\n", encoding="utf-8")
+    (results_dir / "nodes.json").write_text(
+        json.dumps(tuple(sorted(graph))) + "\n", encoding="utf-8"
+    )
     for extension in ("png", "pdf"):
-        plot_sign_shuffle_phase_transition(results, results_dir / f"sign_shuffle_phase_transition.{extension}")
+        plot_sign_shuffle_phase_transition(
+            results, results_dir / f"sign_shuffle_phase_transition.{extension}"
+        )
     print(results.groupby(["model", "stop_reason"]).size().to_string(), flush=True)
     print(f"Saved sign-shuffle results to {results_dir}", flush=True)
     return results

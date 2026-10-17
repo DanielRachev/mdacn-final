@@ -25,8 +25,8 @@ def shuffle_edge_signs(graph: nx.Graph, *, seed: int = 0) -> nx.Graph:
         raise ValueError("Sign shuffling requires a simple undirected graph without self loops")
 
     edges = list(graph.edges(data=True))
-    signs = np.array([edge_data.get("sign") for _, _, edge_data in edges], dtype=np.int8)
-    if not np.isin(signs, (-1, 0, 1)).all():
+    signs = [edge_data.get("sign") for _, _, edge_data in edges]
+    if any(sign not in (-1, 0, 1) for sign in signs):
         raise ValueError("Every edge must have a sign of -1, 0, or +1")
 
     shuffled = np.random.default_rng(seed).permutation(signs)
@@ -208,6 +208,8 @@ def run_sign_shuffle_fraction_sweep(
 
     empirical = build_matrices(graph)
     n_nodes = len(empirical.nodes)
+    if not n_nodes:
+        raise ValueError("graph must have at least one node")
     seeds = np.random.SeedSequence(seed).spawn(len(fractions) * realizations)
     rows = []
 
@@ -222,7 +224,10 @@ def run_sign_shuffle_fraction_sweep(
             initial = initialize_opinions(n_nodes, fraction, seed=initial_seed)
             shuffled = build_matrices(shuffle_edge_signs(graph, seed=shuffle_seed))
 
-            for model, matrix in (("empirical", empirical.signed), ("sign_shuffled", shuffled.signed)):
+            for model, matrix in (
+                ("empirical", empirical.signed),
+                ("sign_shuffled", shuffled.signed),
+            ):
                 result = simulate_nco(matrix, initial, model="signed", max_steps=max_steps)
                 rows.append(
                     {

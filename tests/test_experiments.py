@@ -21,7 +21,7 @@ from mdacn.experiments import (
     run_sign_shuffle_fraction_sweep,
     shuffle_edge_signs,
 )
-from mdacn.nco_pipeline import run_nco_experiment
+from mdacn.nco_pipeline import run_nco_experiment, run_sign_shuffle_experiment
 from mdacn.plots import (
     plot_intervention_comparison,
     plot_phase_transition,
@@ -136,9 +136,9 @@ def test_sign_shuffle_pipeline_and_cli(tmp_path):
     path = tmp_path / "core.graphml"
     export_graph(graph, path)
     output = tmp_path / "sign_shuffle"
-    from mdacn.nco_pipeline import run_sign_shuffle_experiment
-
-    results = run_sign_shuffle_experiment(path, results_dir=output, fractions=(0.2, 0.8), realizations=1, seed=7, max_steps=10)
+    results = run_sign_shuffle_experiment(
+        path, results_dir=output, fractions=(0.2, 0.8), realizations=1, seed=7, max_steps=10
+    )
     metadata = json.loads((output / "metadata.json").read_text())
     assert metadata["null_model"] == "sign_shuffling"
     assert metadata["n_nodes"] == 3
@@ -229,16 +229,39 @@ def test_plot_intervention_comparison_summarises_strategy_curves(tmp_path, monke
     assert not plt.get_fignums()
 
 
+def test_sign_shuffle_rejects_empty_graph(tmp_path):
+    path = tmp_path / "empty.graphml"
+    export_graph(nx.Graph(), path)
+    output = tmp_path / "sign_shuffle"
+
+    with pytest.raises(ValueError, match="at least one node"):
+        run_sign_shuffle_experiment(path, results_dir=output, fractions=(0.5,), realizations=1)
+
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("sign", [0.5, -0.5, 1.9, None])
+def test_sign_shuffle_rejects_invalid_signs(sign):
+    graph = nx.Graph()
+    graph.add_edge("a", "b", sign=sign)
+
+    with pytest.raises(ValueError, match="Every edge must have a sign"):
+        shuffle_edge_signs(graph)
+
+
 def test_sign_shuffle_preserves_topology_and_sign_counts():
-    graph = nx.path_graph(5)
-    signs = [1, -1, 1, -1]
+    graph = nx.path_graph(6)
+    signs = [1, -1, 0, 1, -1]
     for (u, v), sign in zip(graph.edges(), signs, strict=True):
         graph[u][v]["sign"] = sign
 
     shuffled = shuffle_edge_signs(graph, seed=7)
 
     assert set(shuffled.edges()) == set(graph.edges())
-    assert sorted(edge_data["sign"] for _, _, edge_data in shuffled.edges(data=True)) == sorted(signs)
+    assert sorted(edge_data["sign"] for _, _, edge_data in shuffled.edges(data=True)) == sorted(
+        signs
+    )
+    assert [edge_data["sign"] for _, _, edge_data in graph.edges(data=True)] == signs
 
 
 def test_sign_shuffle_fraction_sweep_is_reproducible_and_plots(tmp_path):
