@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from mdacn.contracts import NetworkMatrices
+from mdacn.data import build_matrices
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.interventions import (
     _degree_scores,
@@ -13,6 +14,26 @@ from mdacn.interventions import (
     select_contrarians,
     simulate_ico,
 )
+
+
+def shuffle_edge_signs(graph: nx.Graph, *, seed: int = 0) -> nx.Graph:
+    """Return a copy with edge signs permuted across the same topology.
+
+    The graph structure, node set, and sign multiset are preserved exactly.
+    """
+    if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
+        raise ValueError("Sign shuffling requires a simple undirected graph without self loops")
+
+    edges = list(graph.edges(data=True))
+    signs = np.array([edge_data.get("sign") for _, _, edge_data in edges], dtype=np.int8)
+    if not np.isin(signs, (-1, 0, 1)).all():
+        raise ValueError("Every edge must have a sign of -1, 0, or +1")
+
+    shuffled = np.random.default_rng(seed).permutation(signs)
+    shuffled_graph = graph.copy()
+    for (u, v, _), sign in zip(edges, shuffled, strict=True):
+        shuffled_graph[u][v]["sign"] = int(sign)
+    return shuffled_graph
 
 
 def run_fraction_sweep(
@@ -159,6 +180,67 @@ def run_intervention_sweep(
                         "cycle_length": result.cycle_length,
                     }
                 )
+    results = pd.DataFrame(rows)
+    results["cycle_length"] = results["cycle_length"].astype("Int64")
+    return results
+
+
+def run_sign_shuffle_fraction_sweep(
+    graph: nx.Graph,
+    *,
+    fractions: tuple[float, ...] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
+    realizations: int = 20,
+    seed: int = 0,
+    max_steps: int = 1000,
+) -> pd.DataFrame:
+    """Compare the empirical signed network against a sign-shuffled null model.
+
+    Return one row per model, fraction, and realization. The same initial opinion
+    state is replayed on both the empirical and sign-shuffled signed networks.
+    """
+    if isinstance(realizations, bool) or not isinstance(realizations, int) or realizations < 1:
+        raise ValueError("realizations must be a positive integer")
+    fractions = tuple(fractions)
+    if not fractions or not all(np.isfinite(f) and 0 <= f <= 1 for f in fractions):
+        raise ValueError("fractions must be a nonempty sequence of finite values in [0, 1]")
+    if len(set(fractions)) != len(fractions):
+        raise ValueError("fractions must be unique")
+
+    empirical = build_matrices(graph)
+    n_nodes = len(empirical.nodes)
+    seeds = np.random.SeedSequence(seed).spawn(len(fractions) * realizations)
+    rows = []
+
+    for fraction_index, fraction in enumerate(fractions):
+        for realization in range(realizations):
+            iteration_seed = int(
+                seeds[fraction_index * realizations + realization].generate_state(1)[0]
+            )
+            rng = np.random.default_rng(iteration_seed)
+            initial_seed = int(rng.integers(0, np.iinfo(np.int32).max))
+            shuffle_seed = int(rng.integers(0, np.iinfo(np.int32).max))
+            initial = initialize_opinions(n_nodes, fraction, seed=initial_seed)
+            shuffled = build_matrices(shuffle_edge_signs(graph, seed=shuffle_seed))
+
+            for model, matrix in (("empirical", empirical.signed), ("sign_shuffled", shuffled.signed)):
+                result = simulate_nco(matrix, initial, model="signed", max_steps=max_steps)
+                rows.append(
+                    {
+                        "model": model,
+                        "f": fraction,
+                        "realization": realization,
+                        "seed": seed,
+                        "initial_seed": initial_seed,
+                        "shuffle_seed": shuffle_seed,
+                        "n_nodes": n_nodes,
+                        "initial_negative_fraction": float(np.mean(initial == -1)),
+                        "final_negative_fraction": float(np.mean(result.final_state == -1)),
+                        "steps": result.steps,
+                        "stop_reason": result.stop_reason,
+                        "cycle_length": result.cycle_length,
+                    }
+                )
+
     results = pd.DataFrame(rows)
     results["cycle_length"] = results["cycle_length"].astype("Int64")
     return results
