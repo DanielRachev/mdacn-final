@@ -1,8 +1,8 @@
-# Final Project: Work Distribution 2
+# Final Project: Work Distribution Phase 2
 
 ## Scope and Workload
 
-Keep all existing assignments below. Jacek, Daniel, and Polly already own the Phase 1 work in [work_distribution.md](work_distribution.md); that document stays unchanged. Their Phase 2 work reuses those implementations and remains focused on the tasks already assigned here. New main-scope tasks go to Antreas, Georgi, and Jakub, who also own the final presentation. This keeps additional implementation, experiment, and integration work with the three final presenters.
+Keep all existing assignments below. Jacek, Daniel, and Polly already own the Phase 1 work in [work_distribution_phase_1.md](work_distribution_phase_1.md); that document stays unchanged. Their Phase 2 work reuses those implementations and remains focused on the tasks already assigned here. New main-scope tasks go to Antreas, Georgi, and Jakub, who also own the final presentation. This keeps additional implementation, experiment, and integration work with the three final presenters.
 
 | Team members | Phase 2 focus |
 | --- | --- |
