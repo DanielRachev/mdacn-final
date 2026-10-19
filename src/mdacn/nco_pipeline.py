@@ -9,7 +9,7 @@ import pandas as pd
 
 from mdacn.data import build_matrices, load_graph
 from mdacn.experiments import run_fraction_sweep
-from mdacn.plots import plot_phase_transition
+from mdacn.plots import plot_phase_transition, plot_opinion_gcc
 
 
 def run_nco_experiment(
@@ -35,6 +35,10 @@ def run_nco_experiment(
         mean_initial_negative_fraction=("initial_negative_fraction", "mean"),
         mean_final_negative_fraction=("final_negative_fraction", "mean"),
         std_final_negative_fraction=("final_negative_fraction", "std"),
+        mean_g_minus=("g_minus", "mean"),
+        std_g_minus=("g_minus", "std"),
+        mean_g_plus=("g_plus", "mean"),
+        std_g_plus=("g_plus", "std"),
         mean_steps=("steps", "mean"),
     )
     summary["run_fraction"] = summary["runs"] / realizations
@@ -57,6 +61,8 @@ def run_nco_experiment(
         "opinion_ties": "Keep current state",
         "interaction_ties": "W=0; retain unsigned edge",
         "s1_definition": "Steady negative node fraction, not largest cluster fraction",
+        "g_minus_definition": "Largest -1 component on the fixed unsigned core / full core N",
+        "g_plus_definition": "Largest +1 component on the fixed unsigned core / full core N",
         "nonsteady_outcomes": "Terminal phase/state only; not an equilibrium estimate",
         "versions": {name: version(name) for name in ("mdacn-final", "numpy", "scipy", "pandas")},
     }
@@ -66,6 +72,7 @@ def run_nco_experiment(
     (results_dir / "nodes.json").write_text(json.dumps(network.nodes) + "\n", encoding="utf-8")
     for extension in ("png", "pdf"):
         plot_phase_transition(results, results_dir / f"phase_transition.{extension}")
+        plot_opinion_gcc(results, results_dir / f"opinion_gcc_phase_transition.{extension}")
     print(results.groupby(["model", "stop_reason"]).size().to_string(), flush=True)
     print(f"Saved NCO results to {results_dir}", flush=True)
     return results
