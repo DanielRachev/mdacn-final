@@ -1,12 +1,14 @@
 """Figure interfaces. Each function saves a figure to the supplied path."""
 
 from pathlib import Path
+from typing import Literal
 
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 import pandas as pd
 
-from mdacn.characterisation import fitted_degree_probabilities
+from mdacn.characterisation import fitted_degree_probabilities, degree_distribution
 
 
 def plot_degree_distribution(distribution: pd.DataFrame, fits: pd.DataFrame, path: Path) -> None:
@@ -47,6 +49,80 @@ def plot_degree_distribution(distribution: pd.DataFrame, fits: pd.DataFrame, pat
 
     fig.suptitle("Core degree distribution and discrete baseline fits")
     fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def _core_label(core: nx.Graph) -> str:
+    if core.graph.get("core_method") == "k_core":
+        return f"Connected {core.graph['k']}-core"
+    return "Activity-selected core"
+
+
+def plot_degree_comparison(graph: nx.Graph, core: nx.Graph, path: Path) -> None:
+    """Owner: Jacek. Compare degrees within the aggregate and the extracted core."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.8), sharey=True)
+    for network, label, color in (
+        (graph, "Full aggregate", "tab:blue"),
+        (core, _core_label(core), "tab:orange"),
+    ):
+        distribution = degree_distribution(network)
+        for index, axis in enumerate(axes):
+            visible = distribution if index == 1 else distribution.loc[distribution["degree"] > 0]
+            axis.scatter(
+                visible["degree"], visible["probability"], s=18, alpha=0.75,
+                color=color, label=f"{label} (N={len(network):,})",
+            )
+    axes[0].set_xscale("log")
+    for axis, title in zip(axes, ("Log-log", "Log-linear"), strict=True):
+        axis.set_yscale("log")
+        axis.set_title(title)
+        axis.set_xlabel("Degree k within each graph")
+        axis.grid(alpha=0.2)
+        axis.legend()
+    axes[0].set_ylabel("P(k), normalized within each graph")
+    fig.suptitle("Full aggregate versus extracted core")
+    node_retention = len(core) / len(graph)
+    edge_retention = core.number_of_edges() / graph.number_of_edges() if graph.number_of_edges() else 0
+    fig.text(
+        0.5, 0.02,
+        f"Core retains {node_retention:.1%} of nodes and {edge_retention:.1%} of edges. "
+        "Core degrees count retained neighbors.\nDegree zero is omitted on log-log axes.",
+        ha="center", fontsize=9,
+    )
+    fig.tight_layout(rect=(0, 0.08, 1, 1))
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def plot_core_communities(core: nx.Graph, positions: dict[str, np.ndarray], path: Path) -> None:
+    """Owner: Jacek. Show every core node and edge, coloured by saved Louvain labels."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig, axis = plt.subplots(figsize=(11, 8))
+    if core.number_of_edges():
+        edges = nx.draw_networkx_edges(
+            core, positions, ax=axis, width=0.3, alpha=0.035, edge_color="slategray"
+        )
+        edges.set_rasterized(True)
+    communities = sorted({core.nodes[node]["community"] for node in core})
+    palette = plt.get_cmap("tab10" if len(communities) <= 10 else "tab20")
+    for index, community in enumerate(communities):
+        members = [node for node in core if core.nodes[node]["community"] == community]
+        nx.draw_networkx_nodes(
+            core, positions, nodelist=members, ax=axis, node_size=12, linewidths=0,
+            node_color=[palette(index % palette.N)],
+            label=f"Community {community + 1}: {len(members):,}",
+        )
+    axis.set_title(
+        f"{_core_label(core)}: Louvain communities\n"
+        f"All {len(core):,} nodes and {core.number_of_edges():,} unsigned edges"
+    )
+    axis.legend(loc="upper left", bbox_to_anchor=(1, 1), frameon=False, markerscale=2)
+    axis.set_axis_off()
+    fig.text(0.5, 0.02, "Seeded unsigned layout; colors show structural communities, not opinions.",
+             ha="center", fontsize=9)
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
     fig.savefig(path, dpi=160)
     plt.close(fig)
 
