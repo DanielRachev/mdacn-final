@@ -17,7 +17,8 @@ from mdacn.data import aggregate_edges, build_matrices, export_graph
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.experiments import run_fraction_sweep, run_intervention_sweep
 from mdacn.nco_pipeline import run_nco_experiment
-from mdacn.plots import plot_intervention_comparison, plot_phase_transition
+from mdacn.plots import plot_intervention_comparison, plot_phase_transition, plot_opinion_gcc
+from mdacn.evaluation import compute_opinion_gcc
 
 
 def test_paired_sweep_reproducibility_and_replay():
@@ -37,6 +38,8 @@ def test_paired_sweep_reproducibility_and_replay():
         replay = simulate_nco(network.unsigned, initial, model=row.model, max_steps=20)
         assert row.initial_negative_fraction == np.mean(initial == -1)
         assert row.final_negative_fraction == np.mean(replay.final_state == -1)
+        gcc = compute_opinion_gcc(graph, replay.final_state, nodes=network.nodes)
+        assert (row.g_minus, row.g_plus) == (gcc["g_minus"], gcc["g_plus"])
 
 
 def test_signed_divergence_and_nonsteady_statuses():
@@ -80,8 +83,10 @@ def test_nco_pipeline_and_cli(tmp_path):
     summary = pd.read_csv(output / "fraction_summary.csv")
     assert summary["runs"].sum() == 36
     assert (summary.groupby(["model", "f"])["run_fraction"].sum() == 1).all()
+    assert set(summary) >= {"mean_g_minus", "std_g_minus", "mean_g_plus", "std_g_plus"}
     for extension in ("png", "pdf"):
         assert (output / f"phase_transition.{extension}").stat().st_size > 1000
+        assert (output / f"opinion_gcc_phase_transition.{extension}").stat().st_size > 1000
     completed = subprocess.run(
         [
             sys.executable,
@@ -128,10 +133,15 @@ def test_plot_separates_stop_statuses(tmp_path, monkeypatch):
             "f": [0.5] * 3,
             "stop_reason": ["steady_state", "limit_cycle", "max_steps"],
             "final_negative_fraction": [0.1, 0.8, 0.4],
+            "g_minus": [0.05, 0.7, 0.3],
+            "g_plus": [0.85, 0.1, 0.2],
         }
     )
     plot_phase_transition(results, tmp_path / "statuses.png")
     assert calls == [[0.1], [0.8], [0.4]]
+    calls.clear()
+    plot_opinion_gcc(results, tmp_path / "gcc_statuses.png")
+    assert calls == [[0.05], [0.85], [0.7], [0.1], [0.3], [0.2]]
     assert not plt.get_fignums()
 
 
@@ -175,9 +185,14 @@ def test_intervention_sweep_plots_without_extra_columns(tmp_path):
     pd.testing.assert_frame_equal(results, run_intervention_sweep(graph, network, **kwargs))
     assert (results["n_nodes"] == 4).all()
     assert (results.loc[results["budget"] == 1, "cluster_size"] == 0).all()
+    np.testing.assert_allclose(results["g_minus"], results["cluster_size"] / 4)
+    assert (results.loc[results["budget"] == 1, "g_plus"] == 1).all()
     path = tmp_path / "intervention.png"
     plot_intervention_comparison(results, path)
     assert path.stat().st_size > 1000
+    positive_path = tmp_path / "positive_intervention.png"
+    plot_intervention_comparison(results, positive_path, opinion="plus")
+    assert positive_path.stat().st_size > 1000
     assert not plt.get_fignums()
 
 
