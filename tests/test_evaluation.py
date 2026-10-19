@@ -21,3 +21,5 @@ def test_opinion_gcc_keeps_full_denominator_and_node_alignment():
         "g_minus": 0,
         "g_plus": 0,
     }
+    with pytest.raises(ValueError, match="node order"):
+        compute_opinion_gcc(graph, state, nodes=("a", "b", "c", "d", "missing"))

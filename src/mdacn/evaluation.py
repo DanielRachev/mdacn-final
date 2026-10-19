@@ -21,6 +21,8 @@ def compute_opinion_gcc(
     """
     nodes = tuple(sorted(graph)) if nodes is None else tuple(nodes)
     state = np.asarray(opinion_vector)
+    if state.shape != (len(nodes),) or len(nodes) != len(graph) or set(nodes) != set(graph):
+        raise ValueError("Opinions and node order must match the full graph")
 
     if not nodes:
         return {"g_minus": 0.0, "g_plus": 0.0}
