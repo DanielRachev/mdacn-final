@@ -11,6 +11,7 @@ dependencies = [
     "pandas",
     "scipy",
     "hypothesis",
+    "tqdm",
 ]
 
 [dependency-groups]

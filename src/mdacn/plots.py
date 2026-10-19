@@ -61,7 +61,7 @@ def plot_phase_transition(results: pd.DataFrame, path: Path) -> None:
         raise ValueError("No sweep results to plot")
     path.parent.mkdir(parents=True, exist_ok=True)
     statuses = (
-        ("steady_state", "Steady states: s₁"),
+        ("steady_state", "Steady states"),
         ("limit_cycle", "Limit cycles: terminal phase"),
         ("max_steps", "Update limit: terminal state"),
     )
@@ -74,6 +74,8 @@ def plot_phase_transition(results: pd.DataFrame, path: Path) -> None:
     fig, axes = plt.subplots(1, len(statuses), figsize=(width, 5.2), sharex=True, sharey=True)
     axes = np.atleast_1d(axes)
     lower, upper = 0.0, 1.0
+    x_values = sorted(results["f"].unique())
+
     for axis, (status, title) in zip(axes, statuses, strict=True):
         subset = results.loc[results["stop_reason"] == status]
         for model, color in (("unsigned", "tab:blue"), ("signed", "tab:orange")):
@@ -84,8 +86,7 @@ def plot_phase_transition(results: pd.DataFrame, path: Path) -> None:
             spread = summary["std"].fillna(0)
             lower = min(lower, float((summary["mean"] - spread).min()))
             upper = max(upper, float((summary["mean"] + spread).max()))
-            # Keep gaps when no run at a fraction reaches this status.
-            summary = summary.reindex(sorted(results["f"].unique()))
+            summary = summary.reindex(x_values)
             axis.errorbar(
                 summary.index,
                 summary["mean"],
@@ -98,15 +99,85 @@ def plot_phase_transition(results: pd.DataFrame, path: Path) -> None:
         if len(statuses) > 1:
             axis.set_title(title)
         axis.set_xlabel("Initial negative fraction f")
-        axis.set_xlim(0, 1)
+        xmin, xmax = min(x_values), max(x_values)
+        if xmin == xmax:
+            pad = 0.05 if xmin == 0 else max(0.05, abs(xmin) * 0.05)
+            axis.set_xlim(xmin - pad, xmax + pad)
+        else:
+            axis.set_xlim(xmin, xmax)
         axis.grid(alpha=0.2)
         if subset.empty:
             axis.text(0.5, 0.5, "No runs", ha="center", va="center", transform=axis.transAxes)
         else:
             axis.legend()
+
     axes[0].set_ylim(lower - 0.05, upper + 0.05)
     axes[0].set_ylabel("Final negative fraction")
     fig.suptitle("Unsigned versus signed NCO")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def plot_sign_shuffle_phase_transition(results: pd.DataFrame, path: Path) -> None:
+    """Owner: Polly. Save empirical signed versus sign-shuffled phase transitions."""
+    if results.empty:
+        raise ValueError("No sweep results to plot")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    statuses = (
+        ("steady_state", "Steady states"),
+        ("limit_cycle", "Limit cycles: terminal phase"),
+        ("max_steps", "Update limit: terminal state"),
+    )
+    statuses = [
+        (status, title)
+        for status, title in statuses
+        if status == "steady_state" or (results["stop_reason"] == status).any()
+    ]
+    width = 7 if len(statuses) == 1 else 5 * len(statuses)
+    fig, axes = plt.subplots(1, len(statuses), figsize=(width, 5.2), sharex=True, sharey=True)
+    axes = np.atleast_1d(axes)
+    lower, upper = 0.0, 1.0
+    x_values = sorted(results["f"].unique())
+
+    for axis, (status, title) in zip(axes, statuses, strict=True):
+        subset = results.loc[results["stop_reason"] == status]
+        for model, color in (("empirical", "tab:blue"), ("sign_shuffled", "tab:orange")):
+            runs = subset.loc[subset["model"] == model]
+            if runs.empty:
+                continue
+            summary = runs.groupby("f")["final_negative_fraction"].agg(["mean", "std"])
+            spread = summary["std"].fillna(0)
+            lower = min(lower, float((summary["mean"] - spread).min()))
+            upper = max(upper, float((summary["mean"] + spread).max()))
+            summary = summary.reindex(x_values)
+            axis.errorbar(
+                summary.index,
+                summary["mean"],
+                yerr=summary["std"].fillna(0),
+                fmt="o-" if status == "steady_state" else "o--",
+                color=color,
+                capsize=3,
+                label=f"{model.replace('_', ' ').title()} (n={len(runs)})",
+            )
+        if len(statuses) > 1:
+            axis.set_title(title)
+        axis.set_xlabel("Initial minority fraction f")
+        xmin, xmax = min(x_values), max(x_values)
+        if xmin == xmax:
+            pad = 0.05 if xmin == 0 else max(0.05, abs(xmin) * 0.05)
+            axis.set_xlim(xmin - pad, xmax + pad)
+        else:
+            axis.set_xlim(xmin, xmax)
+        axis.grid(alpha=0.2)
+        if subset.empty:
+            axis.text(0.5, 0.5, "No runs", ha="center", va="center", transform=axis.transAxes)
+        else:
+            axis.legend()
+
+    axes[0].set_ylim(lower - 0.05, upper + 0.05)
+    axes[0].set_ylabel("Final negative fraction s₁")
+    fig.suptitle("Empirical signed network versus sign-shuffled null model")
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)

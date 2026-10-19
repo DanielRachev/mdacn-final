@@ -3,8 +3,11 @@
 import networkx as nx
 import numpy as np
 import pandas as pd
+from scipy.sparse import csr_matrix
+from tqdm import tqdm
 
 from mdacn.contracts import NetworkMatrices
+from mdacn.data import build_matrices
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.interventions import (
     _degree_scores,
@@ -13,6 +16,26 @@ from mdacn.interventions import (
     select_contrarians,
     simulate_ico,
 )
+
+
+def shuffle_edge_signs(graph: nx.Graph, *, seed: int = 0) -> nx.Graph:
+    """Return a copy with edge signs permuted across the same topology.
+
+    The graph structure, node set, and sign multiset are preserved exactly.
+    """
+    if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
+        raise ValueError("Sign shuffling requires a simple undirected graph without self loops")
+
+    edges = list(graph.edges(data=True))
+    signs = [edge_data.get("sign") for _, _, edge_data in edges]
+    if any(sign not in (-1, 0, 1) for sign in signs):
+        raise ValueError("Every edge must have a sign of -1, 0, or +1")
+
+    shuffled = np.random.default_rng(seed).permutation(signs)
+    shuffled_graph = graph.copy()
+    for (u, v, _), sign in zip(edges, shuffled, strict=True):
+        shuffled_graph[u][v]["sign"] = int(sign)
+    return shuffled_graph
 
 
 def run_fraction_sweep(
@@ -159,6 +182,84 @@ def run_intervention_sweep(
                         "cycle_length": result.cycle_length,
                     }
                 )
+    results = pd.DataFrame(rows)
+    results["cycle_length"] = results["cycle_length"].astype("Int64")
+    return results
+
+
+def run_sign_shuffle_fraction_sweep(
+    graph: nx.Graph,
+    *,
+    fractions: tuple[float, ...] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
+    realizations: int = 20,
+    seed: int = 0,
+    max_steps: int = 1000,
+    show_progress: bool = False,
+) -> pd.DataFrame:
+    """Compare the empirical signed network against a sign-shuffled null model.
+
+    Return one row per model, fraction, and realization. The same initial opinion
+    state is replayed on both the empirical and sign-shuffled signed networks.
+    """
+    if isinstance(realizations, bool) or not isinstance(realizations, int) or realizations < 1:
+        raise ValueError("realizations must be a positive integer")
+    fractions = tuple(fractions)
+    if not fractions or not all(np.isfinite(f) and 0 <= f <= 1 for f in fractions):
+        raise ValueError("fractions must be a nonempty sequence of finite values in [0, 1]")
+    if len(set(fractions)) != len(fractions):
+        raise ValueError("fractions must be unique")
+
+    empirical = build_matrices(graph)
+    n_nodes = len(empirical.nodes)
+    if not n_nodes:
+        raise ValueError("graph must have at least one node")
+    node_index = {node: index for index, node in enumerate(empirical.nodes)}
+    # Preserve edge order so shuffle seeds still replay through shuffle_edge_signs.
+    edges = list(graph.edges(data="sign"))
+    sources = np.array([node_index[u] for u, _, _ in edges], dtype=np.intp)
+    targets = np.array([node_index[v] for _, v, _ in edges], dtype=np.intp)
+    edge_rows = np.concatenate((sources, targets))
+    edge_columns = np.concatenate((targets, sources))
+    edge_signs = np.array([sign for _, _, sign in edges], dtype=np.int8)
+    seeds = np.random.SeedSequence(seed).spawn(len(fractions) * realizations)
+    rows = []
+
+    for run_index in tqdm(
+        range(len(seeds)), desc="Sign shuffle", unit="pair", disable=not show_progress
+    ):
+        fraction_index, realization = divmod(run_index, realizations)
+        fraction = fractions[fraction_index]
+        iteration_seed = int(seeds[run_index].generate_state(1)[0])
+        rng = np.random.default_rng(iteration_seed)
+        initial_seed = int(rng.integers(0, np.iinfo(np.int32).max))
+        shuffle_seed = int(rng.integers(0, np.iinfo(np.int32).max))
+        initial = initialize_opinions(n_nodes, fraction, seed=initial_seed)
+        shuffled_signs = np.random.default_rng(shuffle_seed).permutation(edge_signs)
+        shuffled = csr_matrix(
+            (np.tile(shuffled_signs, 2), (edge_rows, edge_columns)),
+            shape=empirical.signed.shape,
+            dtype=float,
+        )
+
+        for model, matrix in (("empirical", empirical.signed), ("sign_shuffled", shuffled)):
+            result = simulate_nco(matrix, initial, model="signed", max_steps=max_steps)
+            rows.append(
+                {
+                    "model": model,
+                    "f": fraction,
+                    "realization": realization,
+                    "seed": seed,
+                    "initial_seed": initial_seed,
+                    "shuffle_seed": shuffle_seed,
+                    "n_nodes": n_nodes,
+                    "initial_negative_fraction": float(np.mean(initial == -1)),
+                    "final_negative_fraction": float(np.mean(result.final_state == -1)),
+                    "steps": result.steps,
+                    "stop_reason": result.stop_reason,
+                    "cycle_length": result.cycle_length,
+                }
+            )
+
     results = pd.DataFrame(rows)
     results["cycle_length"] = results["cycle_length"].astype("Int64")
     return results
