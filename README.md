@@ -14,11 +14,11 @@ uv run python -m mdacn characterise --k 10 --seed 0
 uv run python -m mdacn nco --realizations 20 --seed 0 --max-steps 1000
 ```
 
-| Command | Action |
-| --- | --- |
-| `setup` | Download the body TSV; reuse an existing file. |
+| Command        | Action                                                                                   |
+|----------------|------------------------------------------------------------------------------------------|
+| `setup`        | Download the body TSV; reuse an existing file.                                           |
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
-| `nco` | Compare unsigned and signed dynamics on the exported core. |
+| `nco`          | Compare unsigned and signed dynamics on the exported core.                               |
 
 Alternative core: filter by original incident interaction count, then keep the
 largest connected component.
@@ -45,15 +45,17 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 
 ## Outputs
 
-| Location | Contents |
-| --- | --- |
-| `data/raw/` | Downloaded body TSV. |
-| `data/processed/aggregate.graphml`, `core.graphml` | Graphs with interaction counts and edge signs; core includes community labels. |
-| `data/processed/unsigned.npz`, `signed.npz`, `nodes.json` | Aligned core matrices and node order. |
-| `data/processed/communities.csv` | Node community labels. |
-| `results/metrics.json` | Network metrics and input metadata. |
-| `results/degree_distribution.csv`, `degree_fits.csv`, `degree_distribution.pdf` | Degree distribution, fits, and figure. |
-| `results/nco/` | Simulation results, summaries, figures, and metadata. |
+| Location                                                                                         | Contents                                                                          |
+|--------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| `data/raw/`                                                                                      | Downloaded body TSV.                                                              |
+| `data/processed/aggregate.graphml`, `core.graphml`                                               | Graphs with interaction counts and edge signs; core includes community labels.    |
+| `data/processed/unsigned.npz`, `signed.npz`, `nodes.json`                                        | Aligned core matrices and node order.                                             |
+| `data/processed/communities.csv`                                                                 | Node community labels.                                                            |
+| `results/topology/metrics.json`                                                                  | Network metrics, input metadata, and layout settings.                             |
+| `results/topology/degree_distribution.csv`, `degree_fits.csv`, `degree_distribution.png`, `.pdf` | Core degree distribution, descriptive fits, and figures.                          |
+| `results/topology/aggregate_degree_distribution.csv`, `degree_comparison.png`, `.pdf`            | Full aggregate degrees and comparison with the selected core.                     |
+| `results/topology/core_layout.csv`, `core_communities.png`, `.pdf`                               | Full-core layout coordinates, community labels, and figures.                      |
+| `results/nco/`                                                                                   | Simulation results, raw-fraction and opinion-GCC summaries/figures, and metadata. |
 
 Generated files are ignored by Git. Reruns replace outputs in the selected
 directories. Rerun preprocessing after changing data rules.
