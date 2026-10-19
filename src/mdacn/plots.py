@@ -188,16 +188,80 @@ def plot_phase_transition(results: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
-def plot_intervention_comparison(results: pd.DataFrame, path: Path) -> None:
+def plot_opinion_gcc(results: pd.DataFrame, path: Path) -> None:
+    """Owner: Jacek. Plot both opinion GCC fractions with run variability and stop status."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    statuses = (
+        ("steady_state", "Steady states"),
+        ("limit_cycle", "Limit cycles: terminal phase"),
+        ("max_steps", "Update limit: terminal state"),
+    )
+    statuses = [
+        (status, title) for status, title in statuses
+        if status == "steady_state" or (results["stop_reason"] == status).any()
+    ]
+    fig, axes = plt.subplots(
+        2, len(statuses), figsize=(6 * len(statuses), 8), sharex=True, sharey=True, squeeze=False
+    )
+    fractions = sorted(results["f"].unique())
+    lower, upper = 0.0, 1.0
+    for column, (status, title) in enumerate(statuses):
+        subset = results.loc[results["stop_reason"] == status]
+        for row, (metric, label) in enumerate((("g_minus", "g₋"), ("g_plus", "g₊"))):
+            axis = axes[row, column]
+            for model, color in (("unsigned", "tab:blue"), ("signed", "tab:orange")):
+                runs = subset.loc[subset["model"] == model]
+                if runs.empty:
+                    continue
+                summary = runs.groupby("f")[metric].agg(["mean", "std"]).reindex(fractions)
+                spread = summary["std"].fillna(0)
+                lower = min(lower, float((summary["mean"] - spread).min()))
+                upper = max(upper, float((summary["mean"] + spread).max()))
+                axis.errorbar(
+                    summary.index, summary["mean"], yerr=spread,
+                    fmt="o-" if status == "steady_state" else "o--", color=color,
+                    capsize=3, label=f"{model.capitalize()} (n={len(runs)})",
+                )
+            axis.set_title(f"{title}: {label}")
+            axis.set_xlim(0, 1)
+            axis.grid(alpha=0.2)
+            if subset.empty:
+                axis.text(0.5, 0.5, "No runs", ha="center", va="center", transform=axis.transAxes)
+            else:
+                axis.legend()
+        axes[1, column].set_xlabel("Initial negative fraction f")
+    axes[0, 0].set_ylabel("Negative GCC fraction g₋")
+    axes[1, 0].set_ylabel("Positive GCC fraction g₊")
+    axes[0, 0].set_ylim(lower - 0.05, upper + 0.05)
+    fig.suptitle("Opinion GCCs on the fixed unsigned core\nMean ± sample standard deviation; full core N")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def plot_intervention_comparison(
+        results: pd.DataFrame,
+        path: Path,
+        *,
+        opinion: Literal["minus", "plus"] = "minus"
+) -> None:
     """Owner: Polly. Save opposing cluster fraction S_1/N against contrarian budget Phi.
 
-    Compare random, degree, and leverage targeting with realization variability.
+    Compare random, degree, and leverage targeting with realisation variability.
     Identify cycles and update-limit runs separately from steady-state results.
+    Set opinion="plus" to show the positive GCC instead. The default also
+    accepts older tables containing only cluster_size and n_nodes.
     """
     if results.empty:
         raise ValueError("No intervention results to plot")
     path.parent.mkdir(parents=True, exist_ok=True)
-    results = results.assign(cluster_fraction=results["cluster_size"] / results["n_nodes"])
+    if opinion == "minus":
+        cluster_fraction = results["cluster_size"] / results["n_nodes"]
+    elif opinion == "plus":
+        cluster_fraction = results["g_plus"]
+    else:
+        raise ValueError("opinion must be 'minus' or 'plus'")
+    results = results.assign(cluster_fraction=cluster_fraction)
     statuses = (
         ("steady_state", "Steady states"),
         ("limit_cycle", "Limit cycles: terminal phase"),
@@ -246,7 +310,9 @@ def plot_intervention_comparison(results: pd.DataFrame, path: Path) -> None:
             axis.text(0.5, 0.5, "No runs", ha="center", va="center", transform=axis.transAxes)
         else:
             axis.legend()
-    axes[0].set_ylabel("Opposing cluster fraction S₁/N")
+    axes[0].set_ylabel(
+        "Opposing cluster fraction S₁/N" if opinion == "minus" else "Positive GCC fraction g₊"
+    )
     axes[0].set_ylim(lower - 0.05, upper + 0.05)
     cycles = int((results["stop_reason"] == "limit_cycle").sum())
     limited = int((results["stop_reason"] == "max_steps").sum())
