@@ -37,7 +37,7 @@ def main() -> None:
     analysis.add_argument(
         "--processed-dir", "--processed_dir", type=Path, default=Path("data/processed")
     )
-    analysis.add_argument("--results-dir", type=Path, default=Path("results"))
+    analysis.add_argument("--results-dir", type=Path, default=Path("results/topology"))
 
     nco = commands.add_parser("nco", help="Compare unsigned and signed NCO on the saved core")
     nco.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
