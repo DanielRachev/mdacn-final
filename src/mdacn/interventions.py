@@ -1,5 +1,7 @@
 """ICO interventions on the unsigned network."""
 
+from heapq import nlargest
+
 import networkx as nx
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -110,13 +112,22 @@ def opposing_cluster_size(graph: nx.Graph, nodes: tuple[str, ...], state: Opinio
 
     Return zero if no -1 nodes remain. State order matches nodes.
     """
-    negative_nodes = {node for node, opinion in zip(nodes, state, strict=True) if opinion == -1}
-    if not negative_nodes:
-        return 0
-    subgraph = graph.subgraph(negative_nodes).copy()
-    if subgraph.number_of_nodes() == 0:
-        return 0
-    return max(len(component) for component in nx.connected_components(subgraph))
+    return opinion_cluster_sizes(graph, nodes, state)[0]
+
+
+def opinion_cluster_sizes(
+    graph: nx.Graph, nodes: tuple[str, ...], state: OpinionState, *, opinion: int = -1
+) -> tuple[int, int]:
+    """Return the largest and second-largest components of one opinion.
+
+    Use unsigned topology, including zero-sign edges. Missing components have
+    size zero; equally sized components occupy separate ranks.
+    """
+    members = {node for node, value in zip(nodes, state, strict=True) if value == opinion}
+    sizes = nlargest(2, (len(group) for group in nx.connected_components(graph.subgraph(members))))
+    largest = sizes[0] if sizes else 0
+    second_largest = sizes[1] if len(sizes) > 1 else 0
+    return largest, second_largest
 
 
 def _degree_scores(graph: nx.Graph) -> dict[str, float]:

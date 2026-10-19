@@ -79,14 +79,16 @@ def test_nco_pipeline_and_cli(tmp_path):
     assert metadata["n_nodes"] == 3
     assert len(metadata["graph_sha256"]) == 64
     assert json.loads((output / "nodes.json").read_text()) == ["a", "b", "c"]
-    assert len(pd.read_csv(output / "fraction_sweep.csv")) == len(results) == 36
+    assert len(pd.read_csv(output / "fraction_sweep.csv")) == len(results) == 68
     summary = pd.read_csv(output / "fraction_summary.csv")
-    assert summary["runs"].sum() == 36
+    assert summary["runs"].sum() == 68
     assert (summary.groupby(["model", "f"])["run_fraction"].sum() == 1).all()
     assert set(summary) >= {"mean_g_minus", "std_g_minus", "mean_g_plus", "std_g_plus"}
+    assert set(summary) >= {"mean_g_minus_second", "mean_g_plus_second"}
     for extension in ("png", "pdf"):
         assert (output / f"phase_transition.{extension}").stat().st_size > 1000
         assert (output / f"opinion_gcc_phase_transition.{extension}").stat().st_size > 1000
+        assert (output / f"positive_opinion_gcc_phase_transition.{extension}").stat().st_size > 1000
     completed = subprocess.run(
         [
             sys.executable,
@@ -135,13 +137,34 @@ def test_plot_separates_stop_statuses(tmp_path, monkeypatch):
             "final_negative_fraction": [0.1, 0.8, 0.4],
             "g_minus": [0.05, 0.7, 0.3],
             "g_plus": [0.85, 0.1, 0.2],
+            "g_minus_second": [0.01, 0.02, 0.005],
+            "g_plus_second": [0.01, 0.02, 0.01],
+            "n_nodes": [100] * 3,
         }
     )
     plot_phase_transition(results, tmp_path / "statuses.png")
     assert calls == [[0.1], [0.8], [0.4]]
-    calls.clear()
+    component_calls = []
+    original_plot = Axes.plot
+
+    def capture_components(self, x, y, **kwargs):
+        component_calls.append((self, np.asarray(y).tolist()))
+        return original_plot(self, x, y, **kwargs)
+
+    monkeypatch.setattr(Axes, "plot", capture_components)
     plot_opinion_gcc(results, tmp_path / "gcc_statuses.png")
-    assert calls == [[0.05], [0.85], [0.7], [0.1], [0.3], [0.2]]
+    assert [values for _, values in component_calls] == [
+        [0.05],
+        [0.01],
+        [5],
+        [0.7],
+        [0.02],
+        [10],
+        [0.3],
+        [0.005],
+        [10],
+    ]
+    assert len({id(axis) for axis, _ in component_calls}) == 9
     assert not plt.get_fignums()
 
 
@@ -237,3 +260,25 @@ def test_intervention_plot_separates_stop_statuses(tmp_path, monkeypatch, includ
     if include_steady:
         assert calls[0][2][0] == pytest.approx(np.std([0, 0.5], ddof=1))
     assert not plt.get_fignums()
+
+
+def test_refined_default_preserves_coarse_sweep_seeds_and_outcomes():
+    graph = nx.path_graph(["a", "b", "c", "d"])
+    nx.set_edge_attributes(graph, 1, "sign")
+    network = build_matrices(graph)
+    coarse_fractions = tuple(i / 10 for i in range(1, 10))
+    settings = dict(realizations=2, seed=0, max_steps=20)
+    coarse = run_fraction_sweep(network, fractions=coarse_fractions, **settings)
+    refined = run_fraction_sweep(network, **settings)
+    assert len(refined) == 68
+    assert set(refined["f"]) - set(coarse_fractions) == {
+        0.42,
+        0.44,
+        0.46,
+        0.48,
+        0.52,
+        0.54,
+        0.56,
+        0.58,
+    }
+    pd.testing.assert_frame_equal(coarse, refined.loc[refined["f"].isin(coarse_fractions)])

@@ -56,6 +56,11 @@ These differ from raw opinion fractions when a state is fragmented. Keep each
 measurement alongside its simulation stop reason; a terminal cycle phase is not
 a steady state.
 
+`compute_opinion_components` additionally measures the second-largest component
+of each opinion, using the same denominator and node order. Component plots show
+individual runs, both component ranks, and nodes outside the largest component
+on separate scales. See the [NCO baseline](nco_baseline.md#component-measurements-and-refinement).
+
 ## References
 
 1. Batagelj, V., and Zaveršnik, M. (2003). *An O(m) Algorithm for Cores

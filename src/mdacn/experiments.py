@@ -6,7 +6,7 @@ import pandas as pd
 
 from mdacn.contracts import NetworkMatrices
 from mdacn.dynamics import initialize_opinions, simulate_nco
-from mdacn.evaluation import compute_opinion_gcc
+from mdacn.evaluation import compute_opinion_components, compute_opinion_gcc
 from mdacn.interventions import (
     _degree_scores,
     _leverage_scores,
@@ -14,11 +14,17 @@ from mdacn.interventions import (
     simulate_ico,
 )
 
+# Keep the coarse sweep first so its realisation seeds stay unchanged when
+# adding the finer transition points.
+DEFAULT_FRACTIONS = tuple(i / 10 for i in range(1, 10)) + tuple(
+    i / 100 for i in range(42, 60, 2) if i != 50
+)
+
 
 def run_fraction_sweep(
     network: NetworkMatrices,
     *,
-    fractions: tuple[float, ...] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
+    fractions: tuple[float, ...] = DEFAULT_FRACTIONS,
     realizations: int = 20,
     seed: int = 0,
     max_steps: int = 1000,
@@ -26,7 +32,7 @@ def run_fraction_sweep(
     """Owner: Daniel. Compare unsigned and signed NCO over initial negative fractions.
 
     Return one row per model, fraction, and realisation, with reproducibility
-    fields, raw opinion fractions, opinion GCC fractions, and stop status.
+    fields, raw opinion fractions, first/second component fractions, and stop status.
     Initial states match across models within each fraction and realisation.
     """
     if isinstance(realizations, bool) or not isinstance(realizations, int) or realizations < 1:
@@ -66,7 +72,9 @@ def run_fraction_sweep(
                         "n_nodes": n_nodes,
                         "initial_negative_fraction": float(np.mean(initial == -1)),
                         "final_negative_fraction": float(np.mean(result.final_state == -1)),
-                        **compute_opinion_gcc(graph, result.final_state, nodes=network.nodes),
+                        **compute_opinion_components(
+                            graph, result.final_state, nodes=network.nodes
+                        ),
                         "steps": result.steps,
                         "stop_reason": result.stop_reason,
                         "cycle_length": result.cycle_length,

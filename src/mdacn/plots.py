@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 
 from mdacn.characterisation import degree_distribution, fitted_degree_probabilities
 
@@ -206,8 +207,15 @@ def plot_phase_transition(results: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
-def plot_opinion_gcc(results: pd.DataFrame, path: Path) -> None:
-    """Owner: Jacek. Plot both opinion GCC fractions with run variability and stop status."""
+def plot_opinion_gcc(
+    results: pd.DataFrame, path: Path, *, opinion: Literal["minus", "plus"] = "minus"
+) -> None:
+    """Owner: Jacek. Show individual outcomes and fragmentation for one opinion.
+
+    Rows show the largest component / N, the second-largest component / N,
+    and nodes outside the largest component. Each row has its own scale.
+    Models and terminal-state categories have separate columns.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     statuses = (
         ("steady_state", "Steady states"),
@@ -219,48 +227,89 @@ def plot_opinion_gcc(results: pd.DataFrame, path: Path) -> None:
         for status, title in statuses
         if status == "steady_state" or (results["stop_reason"] == status).any()
     ]
+    models = [model for model in ("unsigned", "signed") if (results["model"] == model).any()]
+    columns = [(status, title, model) for status, title in statuses for model in models]
+    largest = results[f"g_{opinion}"]
+    raw_fraction = results["final_negative_fraction"]
+    if opinion == "plus":
+        raw_fraction = 1 - raw_fraction
+    measurements = results.assign(
+        largest=largest,
+        second=results[f"g_{opinion}_second"],
+        outside=np.maximum(0, np.rint((raw_fraction - largest) * results["n_nodes"])),
+    )
     fig, axes = plt.subplots(
-        2, len(statuses), figsize=(6 * len(statuses), 8), sharex=True, sharey=True, squeeze=False
+        3,
+        len(columns),
+        figsize=(5.4 * len(columns), 9.5),
+        sharex=True,
+        sharey="row",
+        squeeze=False,
     )
     fractions = sorted(results["f"].unique())
-    lower, upper = 0.0, 1.0
-    for column, (status, title) in enumerate(statuses):
-        subset = results.loc[results["stop_reason"] == status]
-        for row, (metric, label) in enumerate((("g_minus", "g₋"), ("g_plus", "g₊"))):
+    jitter_width = min(np.diff(fractions), default=0.1) * 0.18
+    for column, (status, title, model) in enumerate(columns):
+        runs = measurements.loc[
+            (measurements["stop_reason"] == status) & (measurements["model"] == model)
+        ]
+        jitter = np.random.default_rng(42).uniform(-jitter_width, jitter_width, len(runs))
+        color = "tab:blue" if model == "unsigned" else "tab:orange"
+        for row, metric in enumerate(("largest", "second", "outside")):
             axis = axes[row, column]
-            for model, color in (("unsigned", "tab:blue"), ("signed", "tab:orange")):
-                runs = subset.loc[subset["model"] == model]
-                if runs.empty:
-                    continue
-                summary = runs.groupby("f")[metric].agg(["mean", "std"]).reindex(fractions)
-                spread = summary["std"].fillna(0)
-                lower = min(lower, float((summary["mean"] - spread).min()))
-                upper = max(upper, float((summary["mean"] + spread).max()))
-                axis.errorbar(
-                    summary.index,
-                    summary["mean"],
-                    yerr=spread,
-                    fmt="o-" if status == "steady_state" else "o--",
+            if not runs.empty:
+                axis.scatter(
+                    runs["f"] + jitter,
+                    runs[metric],
+                    s=22,
                     color=color,
-                    capsize=3,
-                    label=f"{model.capitalize()} (n={len(runs)})",
+                    alpha=0.5,
+                    edgecolors="none",
                 )
-            axis.set_title(f"{title}: {label}")
+                summary = runs.groupby("f")[metric].mean().reindex(fractions)
+                axis.plot(
+                    summary.index,
+                    summary,
+                    color="black",
+                    marker="D",
+                    markersize=4,
+                    linewidth=1.2,
+                    linestyle="-" if status == "steady_state" else "--",
+                )
+            else:
+                axis.text(0.5, 0.5, "No runs", ha="center", va="center", transform=axis.transAxes)
             axis.set_xlim(0, 1)
             axis.grid(alpha=0.2)
-            if subset.empty:
-                axis.text(0.5, 0.5, "No runs", ha="center", va="center", transform=axis.transAxes)
-            else:
-                axis.legend()
-        axes[1, column].set_xlabel("Initial negative fraction f")
-    axes[0, 0].set_ylabel("Negative GCC fraction g₋")
-    axes[1, 0].set_ylabel("Positive GCC fraction g₊")
-    axes[0, 0].set_ylim(lower - 0.05, upper + 0.05)
-    fig.suptitle(
-        "Opinion GCCs on the fixed unsigned core\n"
-        + "Mean ± sample standard deviation; full core N"
-    )
-    fig.tight_layout()
+            axes[0, column].set_title(f"{model.capitalize()} NCO\n{title} (n={len(runs)})")
+            axes[2, column].set_xlabel("Initial negative fraction f")
+
+        axes[0, 0].set_ylabel("Largest component\nfraction of original N")
+        axes[1, 0].set_ylabel("Second-largest component\nfraction of original N")
+        axes[2, 0].set_ylabel("Opinion nodes outside\nlargest component")
+        axes[0, 0].set_ylim(-0.03, 1.03)
+        min_fraction = 1 / results["n_nodes"].iloc[0]
+        axes[1, 0].set_ylim(0, max(min_fraction, measurements["second"].max()) * 1.1)
+        axes[2, 0].set_ylim(-0.5, max(1, measurements["outside"].max()) * 1.1)
+        fig.legend(
+            handles=[
+                Line2D([], [], color="gray", marker="o", linestyle="none", label="Individual run"),
+                Line2D([], [], color="black", marker="D", markersize=4, label="Mean"),
+            ],
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.95),
+            ncol=2,
+            frameon=False,
+        )
+        name = "negative" if opinion == "minus" else "positive"
+        fig.suptitle(f"Surviving {name} opinion components", fontsize=15, y=0.99)
+        fig.text(
+            0.5,
+            0.02,
+            f"Fixed unsigned core; N = {results['n_nodes'].iloc[0]:,}. "
+            "Points are jittered horizontally for visibility.",
+            ha="center",
+            fontsize=9,
+        )
+    fig.subplots_adjust(left=0.11, right=0.98, bottom=0.08, top=0.86, hspace=0.18, wspace=0.09)
     fig.savefig(path, dpi=160)
     plt.close(fig)
 

@@ -4,7 +4,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from mdacn.evaluation import compute_opinion_gcc
+from mdacn.evaluation import compute_opinion_components, compute_opinion_gcc
 
 
 def test_opinion_gcc_keeps_full_denominator_and_node_alignment():
@@ -23,3 +23,22 @@ def test_opinion_gcc_keeps_full_denominator_and_node_alignment():
     }
     with pytest.raises(ValueError, match="node order"):
         compute_opinion_gcc(graph, state, nodes=("a", "b", "c", "d", "missing"))
+
+
+def test_component_ranks_include_ties_and_missing_components():
+    graph = nx.path_graph(["a", "b", "c", "d", "e"])
+    nx.set_edge_attributes(graph, 0, "sign")
+    state = np.array([-1, -1, 1, -1, 1], dtype=np.int8)
+    assert compute_opinion_components(graph, state) == {
+        "g_minus": 2 / 5,
+        "g_minus_second": 1 / 5,
+        "g_plus": 1 / 5,
+        "g_plus_second": 1 / 5,
+    }
+    assert compute_opinion_components(graph, np.ones(5, dtype=np.int8)) == {
+        "g_minus": 0,
+        "g_minus_second": 0,
+        "g_plus": 1,
+        "g_plus_second": 0,
+    }
+    assert set(compute_opinion_components(nx.Graph(), np.array([], dtype=np.int8)).values()) == {0}
