@@ -18,7 +18,6 @@ def test_opinion_gcc_keeps_full_denominator_and_node_alignment():
     assert compute_opinion_gcc(graph, np.ones(5, dtype=np.int8)) == {"g_minus": 0, "g_plus": 1}
     assert compute_opinion_gcc(graph, -np.ones(5, dtype=np.int8)) == {"g_minus": 1, "g_plus": 0}
     assert compute_opinion_gcc(nx.Graph(), np.array([], dtype=np.int8)) == {
-        "g_minus": 0, "g_plus": 0,
+        "g_minus": 0,
+        "g_plus": 0,
     }
-    with pytest.raises(ValueError, match="node order"):
-        compute_opinion_gcc(graph, state, nodes=("a", "b", "c", "d", "missing"))

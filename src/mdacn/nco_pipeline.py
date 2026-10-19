@@ -9,7 +9,7 @@ import pandas as pd
 
 from mdacn.data import build_matrices, load_graph
 from mdacn.experiments import run_fraction_sweep
-from mdacn.plots import plot_phase_transition, plot_opinion_gcc
+from mdacn.plots import plot_opinion_gcc, plot_phase_transition
 
 
 def run_nco_experiment(

@@ -15,10 +15,10 @@ import pytest
 
 from mdacn.data import aggregate_edges, build_matrices, export_graph
 from mdacn.dynamics import initialize_opinions, simulate_nco
+from mdacn.evaluation import compute_opinion_gcc
 from mdacn.experiments import run_fraction_sweep, run_intervention_sweep
 from mdacn.nco_pipeline import run_nco_experiment
-from mdacn.plots import plot_intervention_comparison, plot_phase_transition, plot_opinion_gcc
-from mdacn.evaluation import compute_opinion_gcc
+from mdacn.plots import plot_intervention_comparison, plot_opinion_gcc, plot_phase_transition
 
 
 def test_paired_sweep_reproducibility_and_replay():

@@ -8,7 +8,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-from mdacn.characterisation import fitted_degree_probabilities, degree_distribution
+from mdacn.characterisation import degree_distribution, fitted_degree_probabilities
 
 
 def plot_degree_distribution(distribution: pd.DataFrame, fits: pd.DataFrame, path: Path) -> None:
@@ -71,8 +71,12 @@ def plot_degree_comparison(graph: nx.Graph, core: nx.Graph, path: Path) -> None:
         for index, axis in enumerate(axes):
             visible = distribution if index == 1 else distribution.loc[distribution["degree"] > 0]
             axis.scatter(
-                visible["degree"], visible["probability"], s=18, alpha=0.75,
-                color=color, label=f"{label} (N={len(network):,})",
+                visible["degree"],
+                visible["probability"],
+                s=18,
+                alpha=0.75,
+                color=color,
+                label=f"{label} (N={len(network):,})",
             )
     axes[0].set_xscale("log")
     for axis, title in zip(axes, ("Log-log", "Log-linear"), strict=True):
@@ -84,12 +88,16 @@ def plot_degree_comparison(graph: nx.Graph, core: nx.Graph, path: Path) -> None:
     axes[0].set_ylabel("P(k), normalized within each graph")
     fig.suptitle("Full aggregate versus extracted core")
     node_retention = len(core) / len(graph)
-    edge_retention = core.number_of_edges() / graph.number_of_edges() if graph.number_of_edges() else 0
+    edge_retention = (
+        core.number_of_edges() / graph.number_of_edges() if graph.number_of_edges() else 0
+    )
     fig.text(
-        0.5, 0.02,
+        0.5,
+        0.02,
         f"Core retains {node_retention:.1%} of nodes and {edge_retention:.1%} of edges. "
         "Core degrees count retained neighbors.\nDegree zero is omitted on log-log axes.",
-        ha="center", fontsize=9,
+        ha="center",
+        fontsize=9,
     )
     fig.tight_layout(rect=(0, 0.08, 1, 1))
     fig.savefig(path, dpi=160)
@@ -110,7 +118,12 @@ def plot_core_communities(core: nx.Graph, positions: dict[str, np.ndarray], path
     for index, community in enumerate(communities):
         members = [node for node in core if core.nodes[node]["community"] == community]
         nx.draw_networkx_nodes(
-            core, positions, nodelist=members, ax=axis, node_size=12, linewidths=0,
+            core,
+            positions,
+            nodelist=members,
+            ax=axis,
+            node_size=12,
+            linewidths=0,
             node_color=[palette(index % palette.N)],
             label=f"Community {community + 1}: {len(members):,}",
         )
@@ -120,8 +133,13 @@ def plot_core_communities(core: nx.Graph, positions: dict[str, np.ndarray], path
     )
     axis.legend(loc="upper left", bbox_to_anchor=(1, 1), frameon=False, markerscale=2)
     axis.set_axis_off()
-    fig.text(0.5, 0.02, "Seeded unsigned layout; colors show structural communities, not opinions.",
-             ha="center", fontsize=9)
+    fig.text(
+        0.5,
+        0.02,
+        "Seeded unsigned layout; colors show structural communities, not opinions.",
+        ha="center",
+        fontsize=9,
+    )
     fig.tight_layout(rect=(0, 0.04, 1, 1))
     fig.savefig(path, dpi=160)
     plt.close(fig)
@@ -197,7 +215,8 @@ def plot_opinion_gcc(results: pd.DataFrame, path: Path) -> None:
         ("max_steps", "Update limit: terminal state"),
     )
     statuses = [
-        (status, title) for status, title in statuses
+        (status, title)
+        for status, title in statuses
         if status == "steady_state" or (results["stop_reason"] == status).any()
     ]
     fig, axes = plt.subplots(
@@ -218,9 +237,13 @@ def plot_opinion_gcc(results: pd.DataFrame, path: Path) -> None:
                 lower = min(lower, float((summary["mean"] - spread).min()))
                 upper = max(upper, float((summary["mean"] + spread).max()))
                 axis.errorbar(
-                    summary.index, summary["mean"], yerr=spread,
-                    fmt="o-" if status == "steady_state" else "o--", color=color,
-                    capsize=3, label=f"{model.capitalize()} (n={len(runs)})",
+                    summary.index,
+                    summary["mean"],
+                    yerr=spread,
+                    fmt="o-" if status == "steady_state" else "o--",
+                    color=color,
+                    capsize=3,
+                    label=f"{model.capitalize()} (n={len(runs)})",
                 )
             axis.set_title(f"{title}: {label}")
             axis.set_xlim(0, 1)
@@ -233,17 +256,17 @@ def plot_opinion_gcc(results: pd.DataFrame, path: Path) -> None:
     axes[0, 0].set_ylabel("Negative GCC fraction g₋")
     axes[1, 0].set_ylabel("Positive GCC fraction g₊")
     axes[0, 0].set_ylim(lower - 0.05, upper + 0.05)
-    fig.suptitle("Opinion GCCs on the fixed unsigned core\nMean ± sample standard deviation; full core N")
+    fig.suptitle(
+        "Opinion GCCs on the fixed unsigned core\n"
+        + "Mean ± sample standard deviation; full core N"
+    )
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
 
 
 def plot_intervention_comparison(
-        results: pd.DataFrame,
-        path: Path,
-        *,
-        opinion: Literal["minus", "plus"] = "minus"
+    results: pd.DataFrame, path: Path, *, opinion: Literal["minus", "plus"] = "minus"
 ) -> None:
     """Owner: Polly. Save opposing cluster fraction S_1/N against contrarian budget Phi.
 

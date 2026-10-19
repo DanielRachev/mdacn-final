@@ -27,7 +27,7 @@ from mdacn.data import (
     largest_component,
     load_interactions,
 )
-from mdacn.plots import plot_degree_distribution, plot_core_communities, plot_degree_comparison
+from mdacn.plots import plot_core_communities, plot_degree_comparison, plot_degree_distribution
 
 
 def _graph_summary(graph: nx.Graph) -> dict[str, int | float | None]:
@@ -107,7 +107,9 @@ def characterise(
 
     distribution = degree_distribution(core)
     fits = fit_degree_baselines(core)
-    degree_distribution(graph).to_csv(results_dir / "aggregate_degree_distribution.csv", index=False)
+    degree_distribution(graph).to_csv(
+        results_dir / "aggregate_degree_distribution.csv", index=False
+    )
     distribution.to_csv(results_dir / "degree_distribution.csv", index=False)
     fits.to_csv(results_dir / "degree_fits.csv", index=False)
 
@@ -164,7 +166,9 @@ def characterise(
 
     (results_dir / "metrics.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
     for extension in ("png", "pdf"):
-        plot_degree_distribution(distribution, fits, results_dir / f"degree_distribution.{extension}")
+        plot_degree_distribution(
+            distribution, fits, results_dir / f"degree_distribution.{extension}"
+        )
         plot_degree_comparison(graph, core, results_dir / f"degree_comparison.{extension}")
         plot_core_communities(core, positions, results_dir / f"core_communities.{extension}")
     print(f"Saved graphs and matrices to {processed_dir}, and metrics and plots to {results_dir}")

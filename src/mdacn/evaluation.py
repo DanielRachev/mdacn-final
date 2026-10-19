@@ -8,10 +8,10 @@ from mdacn.interventions import opposing_cluster_size
 
 
 def compute_opinion_gcc(
-        graph:nx.Graph,
-        opinion_vector: OpinionState,
-        *,
-        nodes: tuple[str, ...] | None = None,
+    graph: nx.Graph,
+    opinion_vector: OpinionState,
+    *,
+    nodes: tuple[str, ...] | None = None,
 ) -> dict[str, float]:
     """Owner: Jacek. Return the largest -1 and +1 component fractions.
 
@@ -27,5 +27,5 @@ def compute_opinion_gcc(
 
     return {
         "g_minus": opposing_cluster_size(graph, nodes, state) / len(graph),
-        "g_plus": opposing_cluster_size(graph, nodes, -state) / len(graph)
+        "g_plus": opposing_cluster_size(graph, nodes, -state) / len(graph),
     }
