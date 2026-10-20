@@ -15,10 +15,20 @@ import pytest
 
 from mdacn.data import aggregate_edges, build_matrices, export_graph
 from mdacn.dynamics import initialize_opinions, simulate_nco
-from mdacn.evaluation import compute_opinion_gcc
-from mdacn.experiments import run_fraction_sweep, run_intervention_sweep
-from mdacn.nco_pipeline import run_nco_experiment
-from mdacn.plots import plot_intervention_comparison, plot_opinion_gcc, plot_phase_transition
+from mdacn.evaluation import compute_opinion_components, compute_opinion_gcc
+from mdacn.experiments import (
+    run_fraction_sweep,
+    run_intervention_sweep,
+    run_sign_shuffle_fraction_sweep,
+    shuffle_edge_signs,
+)
+from mdacn.nco_pipeline import run_nco_experiment, run_sign_shuffle_experiment
+from mdacn.plots import (
+    plot_intervention_comparison,
+    plot_opinion_gcc,
+    plot_phase_transition,
+    plot_sign_shuffle_phase_transition,
+)
 
 
 def test_paired_sweep_reproducibility_and_replay():
@@ -79,9 +89,9 @@ def test_nco_pipeline_and_cli(tmp_path):
     assert metadata["n_nodes"] == 3
     assert len(metadata["graph_sha256"]) == 64
     assert json.loads((output / "nodes.json").read_text()) == ["a", "b", "c"]
-    assert len(pd.read_csv(output / "fraction_sweep.csv")) == len(results) == 68
+    assert len(pd.read_csv(output / "fraction_sweep.csv")) == len(results) == 200
     summary = pd.read_csv(output / "fraction_summary.csv")
-    assert summary["runs"].sum() == 68
+    assert summary["runs"].sum() == 200
     assert (summary.groupby(["model", "f"])["run_fraction"].sum() == 1).all()
     assert set(summary) >= {"mean_g_minus", "std_g_minus", "mean_g_plus", "std_g_plus"}
     assert set(summary) >= {"mean_g_minus_second", "mean_g_plus_second"}
@@ -115,6 +125,79 @@ def test_nco_pipeline_and_cli(tmp_path):
     cli_results = pd.read_csv(tmp_path / "cli" / "fraction_sweep.csv")
     assert len(cli_results) == 4
     assert set(cli_results["stop_reason"]) == {"max_steps"}
+
+
+def test_sign_shuffle_pipeline_and_cli(tmp_path):
+    graph = aggregate_edges(
+        pd.DataFrame(
+            [
+                ("a", "b", 1),
+                ("b", "a", -1),
+                ("a", "c", 1),
+                ("c", "a", -1),
+                ("b", "c", 1),
+                ("c", "b", -1),
+            ],
+            columns=["source", "target", "sentiment"],
+        )
+    )
+    path = tmp_path / "core.graphml"
+    export_graph(graph, path)
+    output = tmp_path / "sign_shuffle"
+    results = run_sign_shuffle_experiment(
+        path, results_dir=output, fractions=(0.2, 0.8), realizations=1, seed=7, max_steps=10
+    )
+    metadata = json.loads((output / "metadata.json").read_text())
+    assert metadata["null_model"] == "sign_shuffling"
+    assert metadata["n_nodes"] == 3
+    assert len(pd.read_csv(output / "sign_shuffle_sweep.csv")) == len(results) == 4
+    summary = pd.read_csv(output / "sign_shuffle_summary.csv")
+    assert summary["runs"].sum() == 4
+    assert set(summary) >= {
+        "mean_g_minus",
+        "std_g_minus",
+        "mean_g_plus",
+        "std_g_plus",
+        "mean_g_minus_second",
+        "std_g_minus_second",
+        "mean_g_plus_second",
+        "std_g_plus_second",
+    }
+    for extension in ("png", "pdf"):
+        for figure in (
+            "sign_shuffle_phase_transition",
+            "opinion_gcc_phase_transition",
+            "positive_opinion_gcc_phase_transition",
+        ):
+            assert (output / f"{figure}.{extension}").stat().st_size > 1000
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mdacn",
+            "sign-shuffle",
+            "--graph",
+            str(path),
+            "--results-dir",
+            str(tmp_path / "cli_sign_shuffle"),
+            "--fractions",
+            "0.2",
+            "0.8",
+            "--realizations",
+            "1",
+            "--max-steps",
+            "10",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Saved sign-shuffle results" in completed.stdout
+    assert "Sign shuffle:" in completed.stderr
+    assert "2/2" in completed.stderr
+    cli_results = pd.read_csv(tmp_path / "cli_sign_shuffle" / "sign_shuffle_sweep.csv")
+    assert len(cli_results) == 4
+    assert set(cli_results["model"]) == {"empirical", "sign_shuffled"}
 
 
 def test_plot_separates_stop_statuses(tmp_path, monkeypatch):
@@ -197,6 +280,94 @@ def test_plot_intervention_comparison_summarises_strategy_curves(tmp_path, monke
     assert not plt.get_fignums()
 
 
+def test_sign_shuffle_rejects_empty_graph(tmp_path):
+    path = tmp_path / "empty.graphml"
+    export_graph(nx.Graph(), path)
+    output = tmp_path / "sign_shuffle"
+
+    with pytest.raises(ValueError, match="at least one node"):
+        run_sign_shuffle_experiment(path, results_dir=output, fractions=(0.5,), realizations=1)
+
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("sign", [0.5, -0.5, 1.9, None])
+def test_sign_shuffle_rejects_invalid_signs(sign):
+    graph = nx.Graph()
+    graph.add_edge("a", "b", sign=sign)
+
+    with pytest.raises(ValueError, match="Every edge must have a sign"):
+        shuffle_edge_signs(graph)
+
+
+def test_sign_shuffle_preserves_topology_and_sign_counts():
+    graph = nx.path_graph(6)
+    signs = [1, -1, 0, 1, -1]
+    for (u, v), sign in zip(graph.edges(), signs, strict=True):
+        graph[u][v]["sign"] = sign
+
+    shuffled = shuffle_edge_signs(graph, seed=7)
+
+    assert set(shuffled.edges()) == set(graph.edges())
+    assert sorted(edge_data["sign"] for _, _, edge_data in shuffled.edges(data=True)) == sorted(
+        signs
+    )
+    assert [edge_data["sign"] for _, _, edge_data in graph.edges(data=True)] == signs
+
+
+def test_sign_shuffle_fraction_sweep_is_reproducible_and_plots(tmp_path):
+    import matplotlib.pyplot as plt
+
+    graph = nx.complete_graph(4)
+    signs = [1, -1, 1, -1, 1, -1]
+    for (u, v), sign in zip(graph.edges(), signs, strict=True):
+        graph[u][v]["sign"] = sign
+
+    kwargs = dict(fractions=(0.2, 0.8), realizations=2, seed=11, max_steps=10)
+    results = run_sign_shuffle_fraction_sweep(graph, **kwargs)
+    pd.testing.assert_frame_equal(results, run_sign_shuffle_fraction_sweep(graph, **kwargs))
+    assert set(results["model"]) == {"empirical", "sign_shuffled"}
+    assert len(results) == 8
+    assert (results["n_nodes"] == 4).all()
+    paired = results.groupby(["f", "realization"])["initial_seed"].nunique()
+    assert (paired == 1).all()
+
+    path = tmp_path / "sign_shuffle.png"
+    plot_sign_shuffle_phase_transition(results, path)
+    assert path.stat().st_size > 1000
+    assert not plt.get_fignums()
+
+
+@pytest.mark.parametrize("signs", [(1, -1, 0, 1, -1, 0), (0,) * 6, (-1,) * 6, ()])
+def test_sign_shuffle_fraction_sweep_matches_graph_replay(signs):
+    nodes = ["d", "a", "c", "b"]
+    graph = nx.complete_graph(nodes) if signs else nx.empty_graph(nodes)
+    graph.add_node("isolated")
+    for (u, v), sign in zip(graph.edges(), signs, strict=True):
+        graph[u][v]["sign"] = sign
+    network = build_matrices(graph)
+    results = run_sign_shuffle_fraction_sweep(
+        graph, fractions=(0, 0.4, 1), realizations=2, seed=7, max_steps=10
+    )
+
+    for row in results.itertuples(index=False):
+        initial = initialize_opinions(len(network.nodes), row.f, seed=row.initial_seed)
+        matrix = network.signed
+        if row.model == "sign_shuffled":
+            matrix = build_matrices(shuffle_edge_signs(graph, seed=row.shuffle_seed)).signed
+        replay = simulate_nco(matrix, initial, model="signed", max_steps=10)
+        assert row.final_negative_fraction == np.mean(replay.final_state == -1)
+        components = compute_opinion_components(graph, replay.final_state, nodes=network.nodes)
+        for metric, value in components.items():
+            assert getattr(row, metric) == value
+        assert row.steps == replay.steps
+        assert row.stop_reason == replay.stop_reason
+        if replay.cycle_length is None:
+            assert pd.isna(row.cycle_length)
+        else:
+            assert row.cycle_length == replay.cycle_length
+
+
 def test_intervention_sweep_plots_without_extra_columns(tmp_path):
     import matplotlib.pyplot as plt
 
@@ -262,23 +433,13 @@ def test_intervention_plot_separates_stop_statuses(tmp_path, monkeypatch, includ
     assert not plt.get_fignums()
 
 
-def test_refined_default_preserves_coarse_sweep_seeds_and_outcomes():
+@pytest.mark.parametrize("sign_shuffle", [False, True])
+def test_default_sweep_uses_uniform_fraction_grid(sign_shuffle):
     graph = nx.path_graph(["a", "b", "c", "d"])
     nx.set_edge_attributes(graph, 1, "sign")
-    network = build_matrices(graph)
-    coarse_fractions = tuple(i / 10 for i in range(1, 10))
-    settings = dict(realizations=2, seed=0, max_steps=20)
-    coarse = run_fraction_sweep(network, fractions=coarse_fractions, **settings)
-    refined = run_fraction_sweep(network, **settings)
-    assert len(refined) == 68
-    assert set(refined["f"]) - set(coarse_fractions) == {
-        0.42,
-        0.44,
-        0.46,
-        0.48,
-        0.52,
-        0.54,
-        0.56,
-        0.58,
-    }
-    pd.testing.assert_frame_equal(coarse, refined.loc[refined["f"].isin(coarse_fractions)])
+    sweep = run_sign_shuffle_fraction_sweep if sign_shuffle else run_fraction_sweep
+    source = graph if sign_shuffle else build_matrices(graph)
+    results = sweep(source, realizations=1, max_steps=0)
+    assert len(results) == 100
+    np.testing.assert_allclose(results["f"].drop_duplicates(), np.linspace(0.02, 1, 50))
+    assert (results.groupby("f")["initial_seed"].nunique() == 1).all()

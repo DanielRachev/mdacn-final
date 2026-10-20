@@ -1,11 +1,11 @@
-"""Commands: python -m mdacn setup / characterise / nco."""
+"""Commands: python -m mdacn setup / characterise / nco / sign-shuffle."""
 
 import argparse
 from pathlib import Path
 
 from mdacn.data import download_dataset
 from mdacn.experiments import DEFAULT_FRACTIONS
-from mdacn.nco_pipeline import run_nco_experiment
+from mdacn.nco_pipeline import run_nco_experiment, run_sign_shuffle_experiment
 from mdacn.pipeline import characterise
 
 DEFAULT_DATASET_PATH = Path("data/raw/soc-RedditHyperlinks-body.tsv")
@@ -48,11 +48,27 @@ def main() -> None:
         type=float,
         nargs="+",
         default=DEFAULT_FRACTIONS,
-        help="Initial negative fractions; default adds 0.02-spaced points between 0.4 and 0.6",
+        help="Initial negative fractions; default is 0.02 to 1.00 in steps of 0.02",
     )
     nco.add_argument("--realizations", type=int, default=20)
     nco.add_argument("--seed", type=int, default=0)
     nco.add_argument("--max-steps", type=int, default=1000)
+
+    sign_shuffle = commands.add_parser(
+        "sign-shuffle", help="Compare empirical signed NCO against sign-shuffled null model"
+    )
+    sign_shuffle.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
+    sign_shuffle.add_argument("--results-dir", type=Path, default=Path("results/sign_shuffle"))
+    sign_shuffle.add_argument(
+        "--fractions",
+        type=float,
+        nargs="+",
+        default=DEFAULT_FRACTIONS,
+        help="Initial negative fractions; default is 0.02 to 1.00 in steps of 0.02",
+    )
+    sign_shuffle.add_argument("--realizations", type=int, default=20)
+    sign_shuffle.add_argument("--seed", type=int, default=0)
+    sign_shuffle.add_argument("--max-steps", type=int, default=1000)
 
     args = parser.parse_args()
     try:
@@ -73,6 +89,15 @@ def main() -> None:
             )
         elif args.command == "nco":
             run_nco_experiment(
+                args.graph,
+                results_dir=args.results_dir,
+                fractions=tuple(args.fractions),
+                realizations=args.realizations,
+                seed=args.seed,
+                max_steps=args.max_steps,
+            )
+        elif args.command == "sign-shuffle":
+            run_sign_shuffle_experiment(
                 args.graph,
                 results_dir=args.results_dir,
                 fractions=tuple(args.fractions),

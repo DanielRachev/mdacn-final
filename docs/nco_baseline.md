@@ -16,6 +16,17 @@ After setup and characterisation in the [README](../README.md):
 uv run python -m mdacn nco --realizations 20 --seed 0 --max-steps 1000
 ```
 
+The current default covers 0.02 to 1.00 in steps of 0.02: 50 fractions and
+2,000 model runs with 20 realizations. The saved settings and results below
+describe the earlier 17-point sweep. Reproduce that baseline with its original
+fraction order, since changing the order changes the assigned seeds:
+
+```bash
+uv run python -m mdacn nco --realizations 20 --seed 0 --max-steps 1000 \
+  --fractions 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 \
+  0.42 0.44 0.46 0.48 0.52 0.54 0.56 0.58
+```
+
 | Setting                               | Value                                                                     |
 |---------------------------------------|---------------------------------------------------------------------------|
 | Core                                  | Largest connected component of the 10-core                                |
