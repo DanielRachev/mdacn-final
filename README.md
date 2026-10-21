@@ -43,6 +43,9 @@ Use each command's `--help` for input paths, output paths, and experiment option
 
 NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_baseline.md).
 
+Corrected temporal windowing, uncertainty estimates, and rerun results:
+[temporal experiment corrections](docs/temporal_corrections.md).
+
 ## Outputs
 
 | Location | Contents |
