@@ -152,6 +152,18 @@ def compare_temporal_trajectories(
                     "step": step,
                     "variant": "real",
                     "positive_fraction": real.positive_fraction[step],
+                    "minority_fraction": float(
+                        min(real.positive_fraction[step], real.negative_fraction[step])
+                    ),
+                    "initial_minority_fraction": (
+                        float(
+                            real.negative_fraction[step]
+                            if negative_fraction < 0.5
+                            else real.positive_fraction[step]
+                        )
+                        if negative_fraction != 0.5
+                        else float("nan")
+                    ),
                     "switches": int(real.changed_count[step - 1]) if step else 0,
                 }
             )
@@ -161,6 +173,18 @@ def compare_temporal_trajectories(
                     "step": step,
                     "variant": "shuffled",
                     "positive_fraction": shuffled.positive_fraction[step],
+                    "minority_fraction": float(
+                        min(shuffled.positive_fraction[step], shuffled.negative_fraction[step])
+                    ),
+                    "initial_minority_fraction": (
+                        float(
+                            shuffled.negative_fraction[step]
+                            if negative_fraction < 0.5
+                            else shuffled.positive_fraction[step]
+                        )
+                        if negative_fraction != 0.5
+                        else float("nan")
+                    ),
                     "switches": int(shuffled.changed_count[step - 1]) if step else 0,
                 }
             )
@@ -279,6 +303,39 @@ def plot_temporal_trajectories(trajectories: pd.DataFrame, output: str | Path) -
 
     ax.set(xlabel="Temporal window / opinion update", ylabel="Fraction holding +1", ylim=(0, 1))
     ax.set_title("Temporal Signed NCO: real versus shuffled timestamps")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output, dpi=180)
+    plt.close(fig)
+
+
+def plot_minority_trajectories(
+    trajectories: pd.DataFrame, output: str | Path, *, metric: str = "minority_fraction"
+) -> None:
+    """Plot minority survival with between-initialization uncertainty."""
+    if metric not in ("minority_fraction", "initial_minority_fraction"):
+        raise ValueError("Unknown minority trajectory metric")
+    if metric not in trajectories or trajectories[metric].isna().all():
+        raise ValueError("Metric is unavailable for this initial opinion fraction")
+
+    fig, ax = plt.subplots(figsize=(10, 4.5))
+    for variant, group in trajectories.groupby("variant"):
+        stats = group.groupby("step")[metric].agg(["mean", "std", "count"])
+        sem = stats["std"].fillna(0) / np.sqrt(stats["count"])
+        x, mean = stats.index.to_numpy(), stats["mean"].to_numpy()
+        delta = 1.96 * sem.to_numpy()
+        ax.plot(x, mean, label=variant)
+        ax.fill_between(x, np.clip(mean - delta, 0, 1), np.clip(mean + delta, 0, 1), alpha=0.2)
+    ylabel = (
+        "Current minority fraction"
+        if metric == "minority_fraction"
+        else "Fraction holding the initially minority opinion"
+    )
+    ax.set(
+        xlabel="Temporal window / opinion update",
+        ylabel=ylabel,
+        title="Minority trajectory: real vs shuffled timing",
+    )
     ax.legend()
     fig.tight_layout()
     fig.savefig(output, dpi=180)

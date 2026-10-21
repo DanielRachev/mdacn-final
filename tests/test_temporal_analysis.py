@@ -145,3 +145,31 @@ def test_fortnightly_activity_signs_and_diagnostics_use_the_same_windows():
     pairs = sample_incident_pairs(data, NODES)
     correlations = incident_edge_correlations(data, NODES, pairs, frequency="2W-SUN")
     assert correlations["correlation"].tolist() == pytest.approx([-1.0])
+
+
+def test_minority_survival_trajectories_and_plots(tmp_path):
+    from mdacn.temporal_analysis import plot_minority_trajectories
+
+    for f in (0.3, 0.5, 0.7):
+        frame = compare_temporal_trajectories(
+            make_events(), NODES, negative_fraction=f, n_repetitions=3, seed=42
+        )
+        np.testing.assert_allclose(
+            frame["minority_fraction"],
+            np.minimum(frame["positive_fraction"], 1 - frame["positive_fraction"]),
+        )
+        initial = frame.loc[frame.step == 0]
+        assert initial["minority_fraction"].nunique() == 1
+        plot_minority_trajectories(frame, tmp_path / f"minority_{f}.png")
+        if f == 0.5:
+            assert frame["initial_minority_fraction"].isna().all()
+            with pytest.raises(ValueError, match="unavailable"):
+                plot_minority_trajectories(
+                    frame, tmp_path / "undefined.png", metric="initial_minority_fraction"
+                )
+        else:
+            expected = (1 - frame["positive_fraction"]) if f < 0.5 else frame["positive_fraction"]
+            np.testing.assert_allclose(frame["initial_minority_fraction"], expected)
+            plot_minority_trajectories(
+                frame, tmp_path / f"initial_{f}.png", metric="initial_minority_fraction"
+            )
