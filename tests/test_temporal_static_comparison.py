@@ -1,4 +1,3 @@
-
 """Tests for static-versus-temporal NCO comparisons."""
 
 import numpy as np
@@ -8,10 +7,10 @@ from scipy.sparse import csr_matrix
 
 from mdacn.dynamics import simulate_nco
 from mdacn.temporal_analysis import (
-    simulate_static_fixed_horizon, run_static_temporal_comparison,
-    summarize_static_temporal, final_metrics,
+    run_static_temporal_comparison,
+    simulate_static_fixed_horizon,
+    summarize_static_temporal,
 )
-
 
 NODES = ("A", "B", "C", "D")
 
@@ -31,12 +30,14 @@ def make_events():
 
 
 def make_static_matrix():
-    return csr_matrix([
-        [0, 1, 1, 1],
-        [1, 0, -1, 1],
-        [1, -1, 0, -1],
-        [1, 1, -1, 0],
-    ])
+    return csr_matrix(
+        [
+            [0, 1, 1, 1],
+            [1, 0, -1, 1],
+            [1, -1, 0, -1],
+            [1, 1, -1, 0],
+        ]
+    )
 
 
 def test_static_single_step_matches_existing_nco():
@@ -68,8 +69,24 @@ def test_static_does_not_modify_initial_state():
 
 
 def test_paired_experiment_shapes_and_reproducibility():
-    first = run_static_temporal_comparison(make_events(), NODES, make_static_matrix(), fractions=(0.3, 0.5), n_initializations=2, n_shuffles=2, seed=42)
-    second = run_static_temporal_comparison(make_events(), NODES, make_static_matrix(), fractions=(0.3, 0.5), n_initializations=2, n_shuffles=2, seed=42)
+    first = run_static_temporal_comparison(
+        make_events(),
+        NODES,
+        make_static_matrix(),
+        fractions=(0.3, 0.5),
+        n_initializations=2,
+        n_shuffles=2,
+        seed=42,
+    )
+    second = run_static_temporal_comparison(
+        make_events(),
+        NODES,
+        make_static_matrix(),
+        fractions=(0.3, 0.5),
+        n_initializations=2,
+        n_shuffles=2,
+        seed=42,
+    )
 
     pd.testing.assert_frame_equal(first, second)
     assert len(first) == 2 * 2 * (2 + 2)
@@ -81,14 +98,28 @@ def test_paired_experiment_shapes_and_reproducibility():
 
 
 def test_static_disagreement_is_zero():
-    results = run_static_temporal_comparison(make_events(), NODES, make_static_matrix(), fractions=(0.5,), n_initializations=2, n_shuffles=2)
+    results = run_static_temporal_comparison(
+        make_events(),
+        NODES,
+        make_static_matrix(),
+        fractions=(0.5,),
+        n_initializations=2,
+        n_shuffles=2,
+    )
     static = results.loc[results["variant"] == "static"]
 
     assert (static["disagreement_with_static"] == 0).all()
 
 
 def test_summary():
-    results = run_static_temporal_comparison(make_events(), NODES, make_static_matrix(), fractions=(0.5,), n_initializations=3, n_shuffles=2)
+    results = run_static_temporal_comparison(
+        make_events(),
+        NODES,
+        make_static_matrix(),
+        fractions=(0.5,),
+        n_initializations=3,
+        n_shuffles=2,
+    )
     summary = summarize_static_temporal(results)
 
     assert len(summary) == 3 * 5
@@ -100,7 +131,9 @@ def test_invalid_configuration():
         simulate_static_fixed_horizon(make_static_matrix(), np.ones(4), steps=-1)
 
     with pytest.raises(ValueError, match="shape"):
-        run_static_temporal_comparison(make_events(), NODES, csr_matrix((3, 3)), n_initializations=1, n_shuffles=1)
+        run_static_temporal_comparison(
+            make_events(), NODES, csr_matrix((3, 3)), n_initializations=1, n_shuffles=1
+        )
 
 
 def test_identical_graph_update_has_zero_disagreement():

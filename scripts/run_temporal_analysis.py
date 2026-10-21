@@ -1,4 +1,3 @@
-
 """Run Person-5 temporal characterization and null-model experiments."""
 
 import argparse
@@ -7,9 +6,14 @@ from pathlib import Path
 
 from mdacn.data import load_interactions
 from mdacn.temporal_analysis import (
-    filter_core_events, temporal_activity, sign_transitions,
-    compare_temporal_trajectories, resolution_ablation,
-    plot_temporal_activity, plot_temporal_trajectories, plot_resolution_ablation,
+    compare_temporal_trajectories,
+    filter_core_events,
+    plot_resolution_ablation,
+    plot_temporal_activity,
+    plot_temporal_trajectories,
+    resolution_ablation,
+    sign_transitions,
+    temporal_activity,
 )
 
 
@@ -42,20 +46,26 @@ def main():
     plot_temporal_activity(activity, args.output / "activity.png")
 
     trajectories = compare_temporal_trajectories(
-        events, nodes, frequency=args.frequency,
+        events,
+        nodes,
+        frequency=args.frequency,
         negative_fraction=args.negative_fraction,
-        n_repetitions=args.repetitions, seed=args.seed,
+        n_repetitions=args.repetitions,
+        seed=args.seed,
         shuffle_mode=args.shuffle_mode,
     )
     trajectories.to_csv(args.output / "trajectories.csv", index=False)
     plot_temporal_trajectories(trajectories, args.output / "trajectories.png")
 
     ablation = resolution_ablation(
-        events, nodes, frequencies=("W-SUN", "2W-SUN", "M"),
+        events,
+        nodes,
+        frequencies=("W-SUN", "2W-SUN", "M"),
         negative_fraction=args.negative_fraction,
         n_initializations=args.repetitions,
         n_shuffles=args.shuffles,
-        seed=args.seed, shuffle_mode=args.shuffle_mode,
+        seed=args.seed,
+        shuffle_mode=args.shuffle_mode,
     )
     ablation.to_csv(args.output / "resolution_ablation.csv", index=False)
     plot_resolution_ablation(ablation, args.output / "resolution_ablation.png")

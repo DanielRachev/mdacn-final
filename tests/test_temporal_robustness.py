@@ -1,4 +1,3 @@
-
 """Tests for temporal robustness and label-invariant metrics."""
 
 import numpy as np
@@ -7,11 +6,15 @@ import pytest
 from scipy.sparse import csr_matrix
 
 from mdacn.temporal_analysis import (
-    lifetime_topology, opinion_metrics, largest_opinion_component,
-    run_fraction_sweep, paired_fraction_summary, shuffle_sentiments,
-    sign_persistence_null, sign_persistence_summary,
+    largest_opinion_component,
+    lifetime_topology,
+    opinion_metrics,
+    paired_fraction_summary,
+    run_fraction_sweep,
+    shuffle_sentiments,
+    sign_persistence_null,
+    sign_persistence_summary,
 )
-
 
 NODES = ("A", "B", "C", "D")
 
@@ -31,12 +34,14 @@ def make_events():
 
 
 def test_label_invariant_metrics():
-    graph = csr_matrix([
-        [0, 1, 0, 0],
-        [1, 0, 1, 0],
-        [0, 1, 0, 1],
-        [0, 0, 1, 0],
-    ])
+    graph = csr_matrix(
+        [
+            [0, 1, 0, 0],
+            [1, 0, 1, 0],
+            [0, 1, 0, 1],
+            [0, 0, 1, 0],
+        ]
+    )
     state = np.array([1, 1, -1, -1], dtype=np.int8)
     metrics = opinion_metrics(graph, state)
     flipped = opinion_metrics(graph, -state)
@@ -57,8 +62,12 @@ def test_lifetime_topology_is_undirected():
 
 
 def test_fraction_sweep_is_reproducible_and_paired():
-    first = run_fraction_sweep(make_events(), NODES, fractions=(0.3, 0.5), n_initializations=2, n_shuffles=2, seed=42)
-    second = run_fraction_sweep(make_events(), NODES, fractions=(0.3, 0.5), n_initializations=2, n_shuffles=2, seed=42)
+    first = run_fraction_sweep(
+        make_events(), NODES, fractions=(0.3, 0.5), n_initializations=2, n_shuffles=2, seed=42
+    )
+    second = run_fraction_sweep(
+        make_events(), NODES, fractions=(0.3, 0.5), n_initializations=2, n_shuffles=2, seed=42
+    )
 
     pd.testing.assert_frame_equal(first, second)
     assert len(first) == 2 * 2 * (1 + 2 * 2)
@@ -70,7 +79,9 @@ def test_fraction_sweep_is_reproducible_and_paired():
 
 
 def test_paired_fraction_summary():
-    results = run_fraction_sweep(make_events(), NODES, fractions=(0.3,), n_initializations=3, n_shuffles=2, seed=42)
+    results = run_fraction_sweep(
+        make_events(), NODES, fractions=(0.3,), n_initializations=3, n_shuffles=2, seed=42
+    )
     summary = paired_fraction_summary(results)
 
     assert len(summary) == 2 * 4
@@ -83,7 +94,9 @@ def test_sign_shuffling_preserves_counts_and_events():
     shuffled = shuffle_sentiments(original, seed=42)
 
     assert sorted(original["sentiment"]) == sorted(shuffled["sentiment"])
-    pd.testing.assert_frame_equal(original.drop(columns="sentiment"), shuffled.drop(columns="sentiment"))
+    pd.testing.assert_frame_equal(
+        original.drop(columns="sentiment"), shuffled.drop(columns="sentiment")
+    )
 
 
 def test_sign_persistence_null():
@@ -97,4 +110,6 @@ def test_sign_persistence_null():
 
 def test_invalid_fraction_sweep():
     with pytest.raises(ValueError, match="fractions"):
-        run_fraction_sweep(make_events(), NODES, fractions=(-0.1,), n_initializations=1, n_shuffles=1)
+        run_fraction_sweep(
+            make_events(), NODES, fractions=(-0.1,), n_initializations=1, n_shuffles=1
+        )

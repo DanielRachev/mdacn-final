@@ -1,4 +1,3 @@
-
 """Timestamp-shuffling null models and paired temporal NCO experiments."""
 
 from collections import Counter
@@ -10,11 +9,12 @@ import pandas as pd
 from mdacn.temporal_data import build_temporal_snapshots
 from mdacn.temporal_dynamics import simulate_temporal_nco
 
-
 ShuffleMode = Literal["global", "within_source"]
 
 
-def shuffle_timestamps(interactions: pd.DataFrame, *, mode: ShuffleMode = "global", seed: int = 0) -> pd.DataFrame:
+def shuffle_timestamps(
+    interactions: pd.DataFrame, *, mode: ShuffleMode = "global", seed: int = 0
+) -> pd.DataFrame:
     """Reassign timestamps without changing event endpoints or signs."""
     if mode not in ("global", "within_source"):
         raise ValueError("mode must be 'global' or 'within_source'")
@@ -46,7 +46,9 @@ def shuffle_timestamps(interactions: pd.DataFrame, *, mode: ShuffleMode = "globa
     return result
 
 
-def validate_timestamp_shuffle(original: pd.DataFrame, shuffled: pd.DataFrame, *, mode: ShuffleMode = "global") -> None:
+def validate_timestamp_shuffle(
+    original: pd.DataFrame, shuffled: pd.DataFrame, *, mode: ShuffleMode = "global"
+) -> None:
     """Raise AssertionError if the null model violates its preservation rules."""
     if mode not in ("global", "within_source"):
         raise ValueError("Invalid shuffle mode")
@@ -55,7 +57,11 @@ def validate_timestamp_shuffle(original: pd.DataFrame, shuffled: pd.DataFrame, *
         raise AssertionError("Event count changed")
 
     for column in ("source", "target", "sentiment"):
-        if not original[column].reset_index(drop=True).equals(shuffled[column].reset_index(drop=True)):
+        if (
+            not original[column]
+            .reset_index(drop=True)
+            .equals(shuffled[column].reset_index(drop=True))
+        ):
             raise AssertionError(f"{column} changed")
 
     original_times = pd.to_datetime(original["timestamp"])
@@ -72,8 +78,13 @@ def validate_timestamp_shuffle(original: pd.DataFrame, shuffled: pd.DataFrame, *
                 raise AssertionError(f"Timestamp distribution changed for source {source}")
 
 
-
-def validate_aggregate_preservation(original: pd.DataFrame, shuffled: pd.DataFrame, nodes: tuple[str, ...], *, mode: ShuffleMode = "global") -> dict:
+def validate_aggregate_preservation(
+    original: pd.DataFrame,
+    shuffled: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    mode: ShuffleMode = "global",
+) -> dict:
     """Explicitly verify full lifetime unsigned/signed graphs and node-degree vectors."""
     from mdacn.data import aggregate_edges
     from mdacn.temporal_data import build_temporal_snapshots
@@ -95,11 +106,18 @@ def validate_aggregate_preservation(original: pd.DataFrame, shuffled: pd.DataFra
     second = build_temporal_snapshots(shuffled, nodes)
     if first.timestamps != second.timestamps or first.event_counts != second.event_counts:
         raise AssertionError("Global weekly timestamp histogram changed")
-    return {"nodes": len(before), "edges": before.number_of_edges(), "degree_preserved": True, "signed_edges_preserved": True, "weekly_global_counts_preserved": True}
+    return {
+        "nodes": len(before),
+        "edges": before.number_of_edges(),
+        "degree_preserved": True,
+        "signed_edges_preserved": True,
+        "weekly_global_counts_preserved": True,
+    }
 
 
-def generate_timestamp_nulls(interactions: pd.DataFrame, *, mode: ShuffleMode = "global", n_shuffles: int = 30,
-                             seed: int = 0) -> Iterator[pd.DataFrame]:
+def generate_timestamp_nulls(
+    interactions: pd.DataFrame, *, mode: ShuffleMode = "global", n_shuffles: int = 30, seed: int = 0
+) -> Iterator[pd.DataFrame]:
     """Yield reproducible, independently seeded timestamp permutations."""
     if n_shuffles < 1:
         raise ValueError("n_shuffles must be positive")
@@ -112,10 +130,19 @@ def generate_timestamp_nulls(interactions: pd.DataFrame, *, mode: ShuffleMode = 
         yield shuffle_timestamps(interactions, mode=mode, seed=shuffle_seed)
 
 
-def evaluate_timestamp_nulls(interactions: pd.DataFrame, nodes: tuple[str, ...], *,
-                             frequency: str = "W-SUN", tie_policy: str = "zero", model: str = "signed",
-                             negative_fraction: float = 0.5, n_initializations: int = 20, n_shuffles: int = 30,
-                             seed: int = 0, mode: ShuffleMode = "global") -> pd.DataFrame:
+def evaluate_timestamp_nulls(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    frequency: str = "W-SUN",
+    tie_policy: str = "zero",
+    model: str = "signed",
+    negative_fraction: float = 0.5,
+    n_initializations: int = 20,
+    n_shuffles: int = 30,
+    seed: int = 0,
+    mode: ShuffleMode = "global",
+) -> pd.DataFrame:
     """Compare real timestamps against nulls with paired opinion initializations."""
     if n_initializations < 1 or n_shuffles < 1:
         raise ValueError("n_initializations and n_shuffles must be positive")
@@ -123,39 +150,51 @@ def evaluate_timestamp_nulls(interactions: pd.DataFrame, nodes: tuple[str, ...],
         raise ValueError("negative_fraction must be between 0 and 1")
 
     rng = np.random.default_rng(seed)
-    real_snapshots = build_temporal_snapshots(interactions, nodes, frequency=frequency, tie_policy=tie_policy)
+    real_snapshots = build_temporal_snapshots(
+        interactions, nodes, frequency=frequency, tie_policy=tie_policy
+    )
     shuffled_snapshots = []
 
-    for shuffled in generate_timestamp_nulls(interactions, mode=mode, n_shuffles=n_shuffles, seed=seed):
-        shuffled_snapshots.append(build_temporal_snapshots(shuffled, nodes, frequency=frequency, tie_policy=tie_policy))
+    for shuffled in generate_timestamp_nulls(
+        interactions, mode=mode, n_shuffles=n_shuffles, seed=seed
+    ):
+        shuffled_snapshots.append(
+            build_temporal_snapshots(shuffled, nodes, frequency=frequency, tie_policy=tie_policy)
+        )
 
     records = []
 
     for initialization in range(n_initializations):
         initial_seed = int(rng.integers(0, np.iinfo(np.int64).max))
-        real = simulate_temporal_nco(real_snapshots, model=model, negative_fraction=negative_fraction, seed=initial_seed)
+        real = simulate_temporal_nco(
+            real_snapshots, model=model, negative_fraction=negative_fraction, seed=initial_seed
+        )
         initial_state = real.initial_state.copy()
 
-        records.append({
-            "initialization": initialization,
-            "shuffle": -1,
-            "variant": "real",
-            "final_positive_fraction": float(real.positive_fraction[-1]),
-            "final_negative_fraction": float(real.negative_fraction[-1]),
-            "total_switches": int(real.changed_count.sum()),
-            "final_week_switches": int(real.changed_count[-1]) if real.steps else 0,
-        })
+        records.append(
+            {
+                "initialization": initialization,
+                "shuffle": -1,
+                "variant": "real",
+                "final_positive_fraction": float(real.positive_fraction[-1]),
+                "final_negative_fraction": float(real.negative_fraction[-1]),
+                "total_switches": int(real.changed_count.sum()),
+                "final_week_switches": int(real.changed_count[-1]) if real.steps else 0,
+            }
+        )
 
         for shuffle_index, snapshots in enumerate(shuffled_snapshots):
             result = simulate_temporal_nco(snapshots, model=model, initial_state=initial_state)
-            records.append({
-                "initialization": initialization,
-                "shuffle": shuffle_index,
-                "variant": "shuffled",
-                "final_positive_fraction": float(result.positive_fraction[-1]),
-                "final_negative_fraction": float(result.negative_fraction[-1]),
-                "total_switches": int(result.changed_count.sum()),
-                "final_week_switches": int(result.changed_count[-1]) if result.steps else 0,
-            })
+            records.append(
+                {
+                    "initialization": initialization,
+                    "shuffle": shuffle_index,
+                    "variant": "shuffled",
+                    "final_positive_fraction": float(result.positive_fraction[-1]),
+                    "final_negative_fraction": float(result.negative_fraction[-1]),
+                    "total_switches": int(result.changed_count.sum()),
+                    "final_week_switches": int(result.changed_count[-1]) if result.steps else 0,
+                }
+            )
 
     return pd.DataFrame.from_records(records)

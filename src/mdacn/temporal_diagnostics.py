@@ -1,31 +1,36 @@
-
 """Temporal burstiness, incident-edge correlations and dyad-conditioned sign nulls."""
 
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix
 
-from mdacn.temporal_analysis import filter_core_events, sign_transitions
-from mdacn.temporal_analysis import summarize_sign_persistence
+from mdacn.temporal_analysis import filter_core_events, sign_transitions, summarize_sign_persistence
+from mdacn.temporal_data import temporal_windows
 from mdacn.temporal_nulls import shuffle_timestamps
-
 
 SIGNS = ("+", "-", "mixed")
 
 
-def _weekly_table(events: pd.DataFrame, nodes: tuple[str, ...], frequency: str) -> tuple[pd.DataFrame, int]:
+def _weekly_table(
+    events: pd.DataFrame, nodes: tuple[str, ...], frequency: str
+) -> tuple[pd.DataFrame, int]:
     """Build source-by-period activity counts, retaining zero-activity windows."""
     if events.empty:
         return pd.DataFrame(index=pd.Index(nodes, name="source")), 0
 
-    periods = events["timestamp"].dt.to_period(frequency)
-    calendar = pd.period_range(periods.min(), periods.max(), freq=frequency)
+    periods, calendar = temporal_windows(events["timestamp"], frequency)
     counts = pd.crosstab(events["source"], periods)
     counts = counts.reindex(index=nodes, columns=calendar, fill_value=0)
     return counts, len(calendar)
 
 
-def node_activity_metrics(interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN", min_events: int = 3) -> pd.DataFrame:
+def node_activity_metrics(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    frequency: str = "W-SUN",
+    min_events: int = 3,
+) -> pd.DataFrame:
     """Calculate source-level event burstiness and weekly activity dispersion."""
     if min_events < 3:
         raise ValueError("min_events must be at least 3")
@@ -33,7 +38,10 @@ def node_activity_metrics(interactions: pd.DataFrame, nodes: tuple[str, ...], *,
     events = filter_core_events(interactions, nodes)
     counts, n_windows = _weekly_table(events, nodes, frequency)
     results = []
-    grouped_times = {node: group["timestamp"].sort_values().to_numpy(dtype="datetime64[ns]") for node, group in events.groupby("source")}
+    grouped_times = {
+        node: group["timestamp"].sort_values().to_numpy(dtype="datetime64[ns]")
+        for node, group in events.groupby("source")
+    }
 
     for node in nodes:
         times = grouped_times.get(node, np.array([], dtype="datetime64[ns]"))
@@ -49,16 +57,27 @@ def node_activity_metrics(interactions: pd.DataFrame, nodes: tuple[str, ...], *,
             if mean_gap + sd_gap > 0:
                 burstiness = (sd_gap - mean_gap) / (sd_gap + mean_gap)
 
-        results.append({
-            "node": node, "event_count": total,
-            "burstiness": burstiness, "weekly_fano": fano,
-            "active_windows": int(np.count_nonzero(activity)),
-        })
+        results.append(
+            {
+                "node": node,
+                "event_count": total,
+                "burstiness": burstiness,
+                "weekly_fano": fano,
+                "active_windows": int(np.count_nonzero(activity)),
+            }
+        )
 
     return pd.DataFrame(results)
 
 
-def activity_null_experiment(interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN", n_shuffles: int = 30, seed: int = 42) -> pd.DataFrame:
+def activity_null_experiment(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    frequency: str = "W-SUN",
+    n_shuffles: int = 30,
+    seed: int = 42,
+) -> pd.DataFrame:
     """Compare source-level burstiness with globally timestamp-shuffled events."""
     if n_shuffles < 1:
         raise ValueError("n_shuffles must be positive")
@@ -68,23 +87,32 @@ def activity_null_experiment(interactions: pd.DataFrame, nodes: tuple[str, ...],
     records = []
 
     for realization in range(-1, n_shuffles):
-        sample = events if realization == -1 else shuffle_timestamps(events, seed=int(rng.integers(0, np.iinfo(np.int64).max)))
+        sample = (
+            events
+            if realization == -1
+            else shuffle_timestamps(events, seed=int(rng.integers(0, np.iinfo(np.int64).max)))
+        )
         metrics = node_activity_metrics(sample, nodes, frequency=frequency)
 
         for metric in ("burstiness", "weekly_fano", "active_windows"):
             eligible = metrics.loc[metrics["event_count"] >= 3, metric].dropna()
-            records.append({
-                "variant": "real" if realization == -1 else "global",
-                "realization": realization, "metric": metric,
-                "mean": float(eligible.mean()) if len(eligible) else np.nan,
-                "median": float(eligible.median()) if len(eligible) else np.nan,
-                "n_nodes": len(eligible),
-            })
+            records.append(
+                {
+                    "variant": "real" if realization == -1 else "global",
+                    "realization": realization,
+                    "metric": metric,
+                    "mean": float(eligible.mean()) if len(eligible) else np.nan,
+                    "median": float(eligible.median()) if len(eligible) else np.nan,
+                    "n_nodes": len(eligible),
+                }
+            )
 
     return pd.DataFrame(records)
 
 
-def sample_incident_pairs(interactions: pd.DataFrame, nodes: tuple[str, ...], *, max_pairs: int = 3000, seed: int = 42) -> pd.DataFrame:
+def sample_incident_pairs(
+    interactions: pd.DataFrame, nodes: tuple[str, ...], *, max_pairs: int = 3000, seed: int = 42
+) -> pd.DataFrame:
     """Sample distinct pairs of undirected edges that share a node."""
     if max_pairs < 1:
         raise ValueError("max_pairs must be positive")
@@ -127,7 +155,13 @@ def sample_incident_pairs(interactions: pd.DataFrame, nodes: tuple[str, ...], *,
     return pd.DataFrame(candidates, columns=["node", "edge_a", "edge_b"])
 
 
-def incident_edge_correlations(interactions: pd.DataFrame, nodes: tuple[str, ...], pairs: pd.DataFrame, *, frequency: str = "W-SUN") -> pd.DataFrame:
+def incident_edge_correlations(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    pairs: pd.DataFrame,
+    *,
+    frequency: str = "W-SUN",
+) -> pd.DataFrame:
     """Calculate Pearson correlations of weekly event counts on sampled incident edge pairs."""
     events = filter_core_events(interactions, nodes)
 
@@ -143,8 +177,7 @@ def incident_edge_correlations(interactions: pd.DataFrame, nodes: tuple[str, ...
     u = np.where(source <= target, source, target)
     v = np.where(source <= target, target, source)
 
-    periods = events["timestamp"].dt.to_period(frequency)
-    calendar = pd.period_range(periods.min(), periods.max(), freq=frequency)
+    periods, calendar = temporal_windows(events["timestamp"], frequency)
     period_idx = pd.Categorical(periods, categories=calendar, ordered=True).codes
 
     edge_keys = list(zip(u, v))
@@ -171,18 +204,32 @@ def incident_edge_correlations(interactions: pd.DataFrame, nodes: tuple[str, ...
             correlations.append(np.nan)
             continue
 
-        numerator = float(activity[a].multiply(activity[b]).sum()) - totals[a] * totals[b] / n_periods
+        numerator = (
+            float(activity[a].multiply(activity[b]).sum()) - totals[a] * totals[b] / n_periods
+        )
         variance_a = squares[a] - totals[a] ** 2 / n_periods
         variance_b = squares[b] - totals[b] ** 2 / n_periods
 
-        correlations.append(numerator / np.sqrt(variance_a * variance_b) if variance_a > 0 and variance_b > 0 else np.nan)
+        correlations.append(
+            numerator / np.sqrt(variance_a * variance_b)
+            if variance_a > 0 and variance_b > 0
+            else np.nan
+        )
 
     result = pairs.copy()
     result["correlation"] = correlations
     return result
 
 
-def correlation_null_experiment(interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN", n_shuffles: int = 30, max_pairs: int = 3000, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame]:
+def correlation_null_experiment(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    frequency: str = "W-SUN",
+    n_shuffles: int = 30,
+    max_pairs: int = 3000,
+    seed: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Compare real incident-edge coordination with both timestamp null models."""
     if n_shuffles < 1:
         raise ValueError("n_shuffles must be positive")
@@ -196,17 +243,26 @@ def correlation_null_experiment(interactions: pd.DataFrame, nodes: tuple[str, ..
         repetitions = 1 if variant == "real" else n_shuffles
 
         for realization in range(repetitions):
-            sample = events if variant == "real" else shuffle_timestamps(events, mode=variant, seed=int(rng.integers(0, np.iinfo(np.int64).max)))
+            sample = (
+                events
+                if variant == "real"
+                else shuffle_timestamps(
+                    events, mode=variant, seed=int(rng.integers(0, np.iinfo(np.int64).max))
+                )
+            )
             calculated = incident_edge_correlations(sample, nodes, pairs, frequency=frequency)
             valid = calculated["correlation"].dropna()
 
-            records.append({
-                "variant": variant, "realization": realization,
-                "mean_correlation": float(valid.mean()) if len(valid) else np.nan,
-                "median_correlation": float(valid.median()) if len(valid) else np.nan,
-                "positive_fraction": float((valid > 0).mean()) if len(valid) else np.nan,
-                "n_pairs": len(valid),
-            })
+            records.append(
+                {
+                    "variant": variant,
+                    "realization": realization,
+                    "mean_correlation": float(valid.mean()) if len(valid) else np.nan,
+                    "median_correlation": float(valid.median()) if len(valid) else np.nan,
+                    "positive_fraction": float((valid > 0).mean()) if len(valid) else np.nan,
+                    "n_pairs": len(valid),
+                }
+            )
 
     return pd.DataFrame(records), pairs
 
@@ -237,7 +293,14 @@ def shuffle_dyad_sentiments(interactions: pd.DataFrame, *, seed: int = 42) -> pd
     return result
 
 
-def dyad_sign_null_experiment(interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN", n_shuffles: int = 100, seed: int = 42) -> pd.DataFrame:
+def dyad_sign_null_experiment(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    frequency: str = "W-SUN",
+    n_shuffles: int = 100,
+    seed: int = 42,
+) -> pd.DataFrame:
     """Compare observed sign transitions with dyad-conditioned sentiment permutations."""
     if n_shuffles < 1:
         raise ValueError("n_shuffles must be positive")
@@ -247,7 +310,11 @@ def dyad_sign_null_experiment(interactions: pd.DataFrame, nodes: tuple[str, ...]
     records = []
 
     for realization in range(-1, n_shuffles):
-        sample = events if realization == -1 else shuffle_dyad_sentiments(events, seed=int(rng.integers(0, np.iinfo(np.int64).max)))
+        sample = (
+            events
+            if realization == -1
+            else shuffle_dyad_sentiments(events, seed=int(rng.integers(0, np.iinfo(np.int64).max)))
+        )
         transitions = sign_transitions(sample, nodes, frequency=frequency)
         counts = {(row.previous, row.current): int(row.count) for row in transitions.itertuples()}
 
@@ -256,12 +323,17 @@ def dyad_sign_null_experiment(interactions: pd.DataFrame, nodes: tuple[str, ...]
 
             for current in SIGNS:
                 count = counts.get((previous, current), 0)
-                records.append({
-                    "variant": "real" if realization == -1 else "within_dyad",
-                    "realization": realization, "previous": previous, "current": current,
-                    "count": count, "denominator": denominator,
-                    "probability": count / denominator if denominator else np.nan,
-                })
+                records.append(
+                    {
+                        "variant": "real" if realization == -1 else "within_dyad",
+                        "realization": realization,
+                        "previous": previous,
+                        "current": current,
+                        "count": count,
+                        "denominator": denominator,
+                        "probability": count / denominator if denominator else np.nan,
+                    }
+                )
 
     return pd.DataFrame(records)
 
@@ -286,14 +358,26 @@ def signed_reciprocity(events: pd.DataFrame, *, sign: int, days: int = 7) -> dic
     required = {"source", "target", "sentiment", "timestamp"}
     if not required.issubset(events.columns):
         raise ValueError("Missing directed-event fields")
-    selected = events.loc[(events["sentiment"] == sign) & (events["source"] != events["target"]), ["source", "target", "timestamp"]].copy()
+    selected = events.loc[
+        (events["sentiment"] == sign) & (events["source"] != events["target"]),
+        ["source", "target", "timestamp"],
+    ].copy()
     selected["timestamp"] = pd.to_datetime(selected["timestamp"], errors="raise")
     if selected["timestamp"].isna().any():
         raise ValueError("Null event timestamp")
     label = "negative" if sign == -1 else "non_negative"
     if selected.empty:
-        return {"sign": label, "eligible_events": 0, "reciprocated_events": 0, "fraction": float("nan"), "days": days}
-    pairs = {(u, v): np.sort(group["timestamp"].to_numpy(dtype="datetime64[ns]")) for (u, v), group in selected.groupby(["source", "target"], sort=False)}
+        return {
+            "sign": label,
+            "eligible_events": 0,
+            "reciprocated_events": 0,
+            "fraction": float("nan"),
+            "days": days,
+        }
+    pairs = {
+        (u, v): np.sort(group["timestamp"].to_numpy(dtype="datetime64[ns]"))
+        for (u, v), group in selected.groupby(["source", "target"], sort=False)
+    }
     responded = 0
     window_ns = np.timedelta64(days, "D")
     for (u, v), times in pairs.items():
@@ -303,34 +387,67 @@ def signed_reciprocity(events: pd.DataFrame, *, sign: int, days: int = 7) -> dic
         positions = np.searchsorted(reverse, times, side="right")
         eligible = positions < reverse.size
         if eligible.any():
-            responded += int(np.count_nonzero(reverse[positions[eligible]] <= times[eligible] + window_ns))
-    return {"sign": label, "eligible_events": len(selected), "reciprocated_events": responded, "fraction": responded / len(selected), "days": days}
+            responded += int(
+                np.count_nonzero(reverse[positions[eligible]] <= times[eligible] + window_ns)
+            )
+    return {
+        "sign": label,
+        "eligible_events": len(selected),
+        "reciprocated_events": responded,
+        "fraction": responded / len(selected),
+        "days": days,
+    }
 
 
 def negative_reciprocity(events: pd.DataFrame, *, days: int = 7) -> dict:
     """Backward-compatible negative-event reciprocity summary."""
     result = signed_reciprocity(events, sign=-1, days=days)
-    return {"negative_events": result["eligible_events"], "reciprocated_events": result["reciprocated_events"], "fraction": result["fraction"], "days": days}
+    return {
+        "negative_events": result["eligible_events"],
+        "reciprocated_events": result["reciprocated_events"],
+        "fraction": result["fraction"],
+        "days": days,
+    }
 
 
-def signed_reciprocity_timestamp_nulls(events: pd.DataFrame, *, days: int = 7, n_shuffles: int = 20, seed: int = 42) -> pd.DataFrame:
+def signed_reciprocity_timestamp_nulls(
+    events: pd.DataFrame, *, days: int = 7, n_shuffles: int = 20, seed: int = 42
+) -> pd.DataFrame:
     """Use identical timestamp permutations to compare both sentiments fairly."""
     if n_shuffles < 1:
         raise ValueError("n_shuffles must be positive")
     rng = np.random.default_rng(seed)
     records = []
     for sign in (-1, 1):
-        records.append({"variant": "real", "shuffle": -1, **signed_reciprocity(events, sign=sign, days=days)})
+        records.append(
+            {"variant": "real", "shuffle": -1, **signed_reciprocity(events, sign=sign, days=days)}
+        )
     for mode in ("global", "within_source"):
         for k in range(n_shuffles):
-            shuffled = shuffle_timestamps(events, mode=mode, seed=int(rng.integers(0, np.iinfo(np.int64).max)))
+            shuffled = shuffle_timestamps(
+                events, mode=mode, seed=int(rng.integers(0, np.iinfo(np.int64).max))
+            )
             for sign in (-1, 1):
-                records.append({"variant": mode, "shuffle": k, **signed_reciprocity(shuffled, sign=sign, days=days)})
+                records.append(
+                    {
+                        "variant": mode,
+                        "shuffle": k,
+                        **signed_reciprocity(shuffled, sign=sign, days=days),
+                    }
+                )
     return pd.DataFrame(records)
 
 
-def reciprocity_timestamp_nulls(events: pd.DataFrame, *, days: int = 7, n_shuffles: int = 20, seed: int = 42) -> pd.DataFrame:
+def reciprocity_timestamp_nulls(
+    events: pd.DataFrame, *, days: int = 7, n_shuffles: int = 20, seed: int = 42
+) -> pd.DataFrame:
     """Backward-compatible negative-only timestamp null experiment."""
-    results = signed_reciprocity_timestamp_nulls(events, days=days, n_shuffles=n_shuffles, seed=seed)
+    results = signed_reciprocity_timestamp_nulls(
+        events, days=days, n_shuffles=n_shuffles, seed=seed
+    )
     neg = results.loc[results["sign"] == "negative"].copy()
-    return neg.rename(columns={"eligible_events": "negative_events"}).drop(columns="sign").reset_index(drop=True)
+    return (
+        neg.rename(columns={"eligible_events": "negative_events"})
+        .drop(columns="sign")
+        .reset_index(drop=True)
+    )

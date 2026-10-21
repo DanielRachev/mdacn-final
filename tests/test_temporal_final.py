@@ -1,4 +1,3 @@
-
 """Tests for final temporal robustness experiments."""
 
 import numpy as np
@@ -7,10 +6,13 @@ import pytest
 from scipy.sparse import csr_matrix
 
 from mdacn.temporal_analysis import (
-    minority_connectivity, shuffle_source_sentiments, compare_sign_persistence,
-    summarize_sign_persistence, paired_bootstrap_summary, run_minority_experiment,
+    compare_sign_persistence,
+    minority_connectivity,
+    paired_bootstrap_summary,
+    run_minority_experiment,
+    shuffle_source_sentiments,
+    summarize_sign_persistence,
 )
-
 
 NODES = ("A", "B", "C", "D")
 
@@ -33,12 +35,14 @@ def make_events():
 
 
 def test_minority_connectivity_connected():
-    graph = csr_matrix([
-        [0, 1, 0, 0],
-        [1, 0, 1, 0],
-        [0, 1, 0, 1],
-        [0, 0, 1, 0],
-    ])
+    graph = csr_matrix(
+        [
+            [0, 1, 0, 0],
+            [1, 0, 1, 0],
+            [0, 1, 0, 1],
+            [0, 0, 1, 0],
+        ]
+    )
     result = minority_connectivity(graph, np.array([-1, -1, 1, 1]))
 
     assert result["minority_count"] == 2
@@ -48,13 +52,15 @@ def test_minority_connectivity_connected():
 
 
 def test_minority_connectivity_fragmented():
-    graph = csr_matrix([
-        [0, 1, 0, 0, 0],
-        [1, 0, 1, 0, 0],
-        [0, 1, 0, 1, 0],
-        [0, 0, 1, 0, 1],
-        [0, 0, 0, 1, 0],
-    ])
+    graph = csr_matrix(
+        [
+            [0, 1, 0, 0, 0],
+            [1, 0, 1, 0, 0],
+            [0, 1, 0, 1, 0],
+            [0, 0, 1, 0, 1],
+            [0, 0, 0, 1, 0],
+        ]
+    )
     result = minority_connectivity(graph, np.array([-1, 1, -1, 1, 1]))
 
     assert result["minority_count"] == 2
@@ -90,8 +96,12 @@ def test_sign_persistence_comparison():
 
 
 def test_minority_experiment_is_reproducible():
-    first = run_minority_experiment(make_events(), NODES, fractions=(0.5,), n_initializations=2, n_shuffles=2, seed=42)
-    second = run_minority_experiment(make_events(), NODES, fractions=(0.5,), n_initializations=2, n_shuffles=2, seed=42)
+    first = run_minority_experiment(
+        make_events(), NODES, fractions=(0.5,), n_initializations=2, n_shuffles=2, seed=42
+    )
+    second = run_minority_experiment(
+        make_events(), NODES, fractions=(0.5,), n_initializations=2, n_shuffles=2, seed=42
+    )
 
     pd.testing.assert_frame_equal(first, second)
     assert len(first) == 2 * (1 + 2 * 2)
@@ -102,10 +112,26 @@ def test_paired_bootstrap():
     rows = []
 
     for initialization in range(4):
-        rows.append({"f": 0.5, "initialization": initialization, "variant": "real", "shuffle": -1, "score": 0.8})
+        rows.append(
+            {
+                "f": 0.5,
+                "initialization": initialization,
+                "variant": "real",
+                "shuffle": -1,
+                "score": 0.8,
+            }
+        )
 
         for shuffle in range(3):
-            rows.append({"f": 0.5, "initialization": initialization, "variant": "global", "shuffle": shuffle, "score": 0.6})
+            rows.append(
+                {
+                    "f": 0.5,
+                    "initialization": initialization,
+                    "variant": "global",
+                    "shuffle": shuffle,
+                    "score": 0.6,
+                }
+            )
 
     results = pd.DataFrame(rows)
     first = paired_bootstrap_summary(results, metrics=("score",), n_bootstrap=100, seed=42)

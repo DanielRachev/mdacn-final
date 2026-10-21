@@ -1,4 +1,3 @@
-
 """Temporal unsigned and signed NCO simulations."""
 
 from dataclasses import dataclass
@@ -7,9 +6,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from mdacn.dynamics import initialize_opinions, _prepare_matrix, _prepare_state, _step
+from mdacn.dynamics import _prepare_matrix, _prepare_state, _step, initialize_opinions
 from mdacn.temporal_data import TemporalSnapshots
-
 
 TemporalModel = Literal["unsigned", "signed"]
 
@@ -31,10 +29,15 @@ class TemporalNCOResult:
         return len(self.timestamps)
 
 
-def simulate_temporal_nco(snapshots: TemporalSnapshots, *, model: TemporalModel = "signed",
-                          initial_state: np.ndarray | None = None,
-                          negative_fraction: float | None = None, seed: int | None = None, record_states: bool = False)\
-        -> TemporalNCOResult:
+def simulate_temporal_nco(
+    snapshots: TemporalSnapshots,
+    *,
+    model: TemporalModel = "signed",
+    initial_state: np.ndarray | None = None,
+    negative_fraction: float | None = None,
+    seed: int | None = None,
+    record_states: bool = False,
+) -> TemporalNCOResult:
     """Run one synchronous NCO update per snapshot, without early stopping."""
 
     if model not in ("unsigned", "signed"):

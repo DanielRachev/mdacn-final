@@ -1,17 +1,19 @@
-
 """Tests for temporal activity, incident correlations and dyad sign nulls."""
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from mdacn.temporal_diagnostics import (
-    node_activity_metrics, activity_null_experiment, sample_incident_pairs,
-    incident_edge_correlations, correlation_null_experiment,
-    shuffle_dyad_sentiments, dyad_sign_null_experiment, summarize_dyad_sign_null,
+    activity_null_experiment,
+    correlation_null_experiment,
+    dyad_sign_null_experiment,
+    incident_edge_correlations,
+    node_activity_metrics,
+    sample_incident_pairs,
+    shuffle_dyad_sentiments,
+    summarize_dyad_sign_null,
 )
 from mdacn.temporal_nulls import shuffle_timestamps
-
 
 NODES = ("A", "B", "C", "D")
 
@@ -75,7 +77,9 @@ def test_incident_correlations_are_bounded():
 
 
 def test_correlation_null_runs():
-    results, pairs = correlation_null_experiment(make_events(), NODES, n_shuffles=2, max_pairs=20, seed=42)
+    results, pairs = correlation_null_experiment(
+        make_events(), NODES, n_shuffles=2, max_pairs=20, seed=42
+    )
 
     assert len(results) == 5
     assert set(results["variant"]) == {"real", "global", "within_source"}

@@ -1,4 +1,3 @@
-
 """Tests for temporal timestamp-shuffling null models."""
 
 import numpy as np
@@ -6,21 +5,28 @@ import pandas as pd
 import pytest
 
 from mdacn.temporal_data import build_temporal_snapshots
-from mdacn.temporal_nulls import (shuffle_timestamps, validate_timestamp_shuffle,
-                                  generate_timestamp_nulls, evaluate_timestamp_nulls)
+from mdacn.temporal_nulls import (
+    evaluate_timestamp_nulls,
+    generate_timestamp_nulls,
+    shuffle_timestamps,
+    validate_timestamp_shuffle,
+)
 
 
 def make_events():
-    return pd.DataFrame([
-        ("A", "B", 1, "2026-01-05"),
-        ("A", "B", -1, "2026-01-06"),
-        ("A", "C", 1, "2026-01-13"),
-        ("A", "D", -1, "2026-01-20"),
-        ("B", "C", 1, "2026-01-07"),
-        ("B", "D", -1, "2026-01-14"),
-        ("C", "D", 1, "2026-01-21"),
-        ("D", "A", -1, "2026-01-22"),
-    ], columns=["source", "target", "sentiment", "timestamp"]).assign(timestamp=lambda df: pd.to_datetime(df["timestamp"]))
+    return pd.DataFrame(
+        [
+            ("A", "B", 1, "2026-01-05"),
+            ("A", "B", -1, "2026-01-06"),
+            ("A", "C", 1, "2026-01-13"),
+            ("A", "D", -1, "2026-01-20"),
+            ("B", "C", 1, "2026-01-07"),
+            ("B", "D", -1, "2026-01-14"),
+            ("C", "D", 1, "2026-01-21"),
+            ("D", "A", -1, "2026-01-22"),
+        ],
+        columns=["source", "target", "sentiment", "timestamp"],
+    ).assign(timestamp=lambda df: pd.to_datetime(df["timestamp"]))
 
 
 def test_global_shuffle_preserves_events_and_timestamps():
@@ -88,14 +94,18 @@ def test_multiple_shuffles():
 
 def test_paired_monte_carlo_experiments():
     original = make_events()
-    results = evaluate_timestamp_nulls(original, ("A", "B", "C", "D"), n_initializations=3, n_shuffles=4, seed=42)
+    results = evaluate_timestamp_nulls(
+        original, ("A", "B", "C", "D"), n_initializations=3, n_shuffles=4, seed=42
+    )
 
     assert len(results) == 3 * (1 + 4)
     assert (results["variant"] == "real").sum() == 3
     assert (results["variant"] == "shuffled").sum() == 12
     assert results["final_positive_fraction"].between(0, 1).all()
     assert results["final_negative_fraction"].between(0, 1).all()
-    np.testing.assert_allclose(results["final_positive_fraction"] + results["final_negative_fraction"], 1)
+    np.testing.assert_allclose(
+        results["final_positive_fraction"] + results["final_negative_fraction"], 1
+    )
 
 
 def test_invalid_configuration():

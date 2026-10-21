@@ -1,4 +1,3 @@
-
 """Generate final temporal robustness results and presentation figures."""
 
 import argparse
@@ -12,8 +11,10 @@ import pandas as pd
 
 from mdacn.data import load_interactions
 from mdacn.temporal_analysis import (
-    run_minority_experiment, compare_sign_persistence,
-    summarize_sign_persistence, paired_bootstrap_summary,
+    compare_sign_persistence,
+    paired_bootstrap_summary,
+    run_minority_experiment,
+    summarize_sign_persistence,
 )
 
 
@@ -105,27 +106,48 @@ def main():
 
     print("\n1. Calculating bootstrap confidence intervals...")
     previous = pd.read_csv(args.previous)
-    previous_metrics = ("absolute_magnetization", "minority_fraction", "largest_opinion_gcc_fraction", "total_switches")
-    effects = paired_bootstrap_summary(previous, metrics=previous_metrics, n_bootstrap=args.bootstrap, seed=args.seed)
+    previous_metrics = (
+        "absolute_magnetization",
+        "minority_fraction",
+        "largest_opinion_gcc_fraction",
+        "total_switches",
+    )
+    effects = paired_bootstrap_summary(
+        previous, metrics=previous_metrics, n_bootstrap=args.bootstrap, seed=args.seed
+    )
     effects.to_csv(output / "opinion_effects.csv", index=False)
     plot_effects(effects, output)
 
     print("\n2. Evaluating minority fragmentation...")
     minority = run_minority_experiment(
-        interactions, nodes, fractions=tuple(args.fractions), frequency=args.frequency,
-        n_initializations=args.initializations, n_shuffles=args.shuffles, seed=args.seed,
+        interactions,
+        nodes,
+        fractions=tuple(args.fractions),
+        frequency=args.frequency,
+        n_initializations=args.initializations,
+        n_shuffles=args.shuffles,
+        seed=args.seed,
     )
     minority.to_csv(output / "minority_fragmentation.csv", index=False)
 
-    minority_metrics = ("minority_lcc_fraction", "minority_component_count", "minority_isolated_fraction")
-    minority_effects = paired_bootstrap_summary(minority, metrics=minority_metrics, n_bootstrap=args.bootstrap, seed=args.seed)
+    minority_metrics = (
+        "minority_lcc_fraction",
+        "minority_component_count",
+        "minority_isolated_fraction",
+    )
+    minority_effects = paired_bootstrap_summary(
+        minority, metrics=minority_metrics, n_bootstrap=args.bootstrap, seed=args.seed
+    )
     minority_effects.to_csv(output / "minority_effects.csv", index=False)
     plot_effects(minority_effects, output)
 
     print("\n3. Evaluating source-conditioned sign persistence...")
     transitions = compare_sign_persistence(
-        interactions, nodes, frequency=args.frequency,
-        n_shuffles=args.sign_shuffles, seed=args.seed,
+        interactions,
+        nodes,
+        frequency=args.frequency,
+        n_shuffles=args.sign_shuffles,
+        seed=args.seed,
     )
     transitions.to_csv(output / "sign_null_raw.csv", index=False)
 
@@ -137,7 +159,9 @@ def main():
     print(minority_effects.to_string(index=False))
 
     print("\nSign persistence results:")
-    print(sign_summary.loc[sign_summary["previous"] == sign_summary["current"]].to_string(index=False))
+    print(
+        sign_summary.loc[sign_summary["previous"] == sign_summary["current"]].to_string(index=False)
+    )
 
     print(f"\nAll results saved to {output}")
 

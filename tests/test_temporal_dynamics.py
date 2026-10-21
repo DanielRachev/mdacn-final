@@ -1,4 +1,3 @@
-
 """Tests for temporal unsigned and signed NCO simulations."""
 
 import numpy as np
@@ -17,10 +16,12 @@ def make_snapshots(rows, nodes=("A", "B", "C")):
 
 
 def test_temporal_matches_static_nco_for_one_step():
-    snapshots = make_snapshots([
-        ("A", "B", -1, "2026-01-05"),
-        ("A", "C", 1, "2026-01-05"),
-    ])
+    snapshots = make_snapshots(
+        [
+            ("A", "B", -1, "2026-01-05"),
+            ("A", "C", 1, "2026-01-05"),
+        ]
+    )
     initial = np.array([1, 1, -1], dtype=np.int8)
 
     for model in ("signed", "unsigned"):
@@ -32,10 +33,12 @@ def test_temporal_matches_static_nco_for_one_step():
 
 
 def test_signed_and_unsigned_can_produce_different_results():
-    snapshots = make_snapshots([
-        ("A", "B", -1, "2026-01-05"),
-        ("A", "C", 1, "2026-01-05"),
-    ])
+    snapshots = make_snapshots(
+        [
+            ("A", "B", -1, "2026-01-05"),
+            ("A", "C", 1, "2026-01-05"),
+        ]
+    )
     initial = np.array([1, 1, -1], dtype=np.int8)
 
     signed = simulate_temporal_nco(snapshots, model="signed", initial_state=initial)
@@ -46,11 +49,13 @@ def test_signed_and_unsigned_can_produce_different_results():
 
 
 def test_simulation_continues_after_temporary_stability():
-    snapshots = make_snapshots([
-        ("A", "B", 1, "2026-01-05"),
-        ("A", "B", -1, "2026-01-12"),
-        ("A", "C", 1, "2026-01-12"),
-    ])
+    snapshots = make_snapshots(
+        [
+            ("A", "B", 1, "2026-01-05"),
+            ("A", "B", -1, "2026-01-12"),
+            ("A", "C", 1, "2026-01-12"),
+        ]
+    )
     initial = np.array([1, 1, -1], dtype=np.int8)
 
     result = simulate_temporal_nco(snapshots, initial_state=initial, record_states=True)
@@ -64,9 +69,11 @@ def test_simulation_continues_after_temporary_stability():
 
 
 def test_random_initialization_is_reproducible():
-    snapshots = make_snapshots([
-        ("A", "B", 1, "2026-01-05"),
-    ])
+    snapshots = make_snapshots(
+        [
+            ("A", "B", 1, "2026-01-05"),
+        ]
+    )
 
     first = simulate_temporal_nco(snapshots, negative_fraction=0.4, seed=42)
     second = simulate_temporal_nco(snapshots, negative_fraction=0.4, seed=42)
@@ -76,10 +83,12 @@ def test_random_initialization_is_reproducible():
 
 
 def test_fraction_history_and_changes():
-    snapshots = make_snapshots([
-        ("A", "B", -1, "2026-01-05"),
-        ("A", "C", 1, "2026-01-05"),
-    ])
+    snapshots = make_snapshots(
+        [
+            ("A", "B", -1, "2026-01-05"),
+            ("A", "C", 1, "2026-01-05"),
+        ]
+    )
     initial = np.array([1, 1, -1], dtype=np.int8)
 
     result = simulate_temporal_nco(snapshots, initial_state=initial)
@@ -93,10 +102,12 @@ def test_fraction_history_and_changes():
 
 
 def test_initial_state_is_not_modified():
-    snapshots = make_snapshots([
-        ("A", "B", -1, "2026-01-05"),
-        ("A", "C", 1, "2026-01-05"),
-    ])
+    snapshots = make_snapshots(
+        [
+            ("A", "B", -1, "2026-01-05"),
+            ("A", "C", 1, "2026-01-05"),
+        ]
+    )
     initial = np.array([1, 1, -1], dtype=np.int8)
     original = initial.copy()
 

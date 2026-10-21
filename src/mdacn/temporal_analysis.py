@@ -1,4 +1,3 @@
-
 """Temporal network characterization, NCO comparisons, and statistical analysis."""
 
 from pathlib import Path
@@ -6,19 +5,14 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import t
-
-from mdacn.temporal_data import build_temporal_snapshots
-from mdacn.temporal_dynamics import simulate_temporal_nco
-from mdacn.temporal_nulls import evaluate_timestamp_nulls, shuffle_timestamps
-
-
-from collections import Counter
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
-from mdacn.dynamics import initialize_opinions
-from mdacn.temporal_nulls import shuffle_timestamps
-from mdacn.dynamics import initialize_opinions, _prepare_matrix, _prepare_state, _step
+from scipy.stats import t
+
+from mdacn.dynamics import _prepare_matrix, _prepare_state, _step, initialize_opinions
+from mdacn.temporal_data import build_temporal_snapshots, temporal_windows
+from mdacn.temporal_dynamics import simulate_temporal_nco
+from mdacn.temporal_nulls import evaluate_timestamp_nulls, shuffle_timestamps
 
 
 def filter_core_events(interactions: pd.DataFrame, nodes: tuple[str, ...]) -> pd.DataFrame:
@@ -28,9 +22,10 @@ def filter_core_events(interactions: pd.DataFrame, nodes: tuple[str, ...]) -> pd
         raise ValueError(f"Missing columns: {sorted(required - set(interactions.columns))}")
 
     events = interactions.loc[
-        interactions["source"].isin(nodes) & interactions["target"].isin(nodes)
+        interactions["source"].isin(nodes)
+        & interactions["target"].isin(nodes)
         & interactions["source"].ne(interactions["target"])
-        ].copy()
+    ].copy()
 
     events["timestamp"] = pd.to_datetime(events["timestamp"], errors="raise")
     if events["timestamp"].isna().any() or not events["sentiment"].isin((-1, 1)).all():
@@ -39,7 +34,9 @@ def filter_core_events(interactions: pd.DataFrame, nodes: tuple[str, ...]) -> pd
     return events
 
 
-def temporal_activity(interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN") -> pd.DataFrame:
+def temporal_activity(
+    interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN"
+) -> pd.DataFrame:
     """Summarize event volume and sentiment composition for every time window."""
     events = filter_core_events(interactions, nodes)
     columns = ["timestamp", "total", "positive", "negative", "negative_fraction", "active_nodes"]
@@ -47,8 +44,7 @@ def temporal_activity(interactions: pd.DataFrame, nodes: tuple[str, ...], *, fre
     if events.empty:
         return pd.DataFrame(columns=columns)
 
-    events["period"] = events["timestamp"].dt.to_period(frequency)
-    periods = pd.period_range(events["period"].min(), events["period"].max(), freq=frequency)
+    events["period"], periods = temporal_windows(events["timestamp"], frequency)
     records = []
 
     for period in periods:
@@ -57,19 +53,23 @@ def temporal_activity(interactions: pd.DataFrame, nodes: tuple[str, ...], *, fre
         negative = int((window["sentiment"] == -1).sum())
         active = len(set(window["source"]).union(window["target"]))
 
-        records.append({
-            "timestamp": period.start_time,
-            "total": len(window),
-            "positive": positive,
-            "negative": negative,
-            "negative_fraction": negative / len(window) if len(window) else np.nan,
-            "active_nodes": active,
-        })
+        records.append(
+            {
+                "timestamp": period.start_time,
+                "total": len(window),
+                "positive": positive,
+                "negative": negative,
+                "negative_fraction": negative / len(window) if len(window) else np.nan,
+                "active_nodes": active,
+            }
+        )
 
     return pd.DataFrame(records)
 
 
-def sign_transitions(interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN") -> pd.DataFrame:
+def sign_transitions(
+    interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN"
+) -> pd.DataFrame:
     """Count sign transitions for undirected dyads active in consecutive windows."""
     events = filter_core_events(interactions, nodes)
     columns = ["previous", "current", "count", "probability"]
@@ -83,14 +83,18 @@ def sign_transitions(interactions: pd.DataFrame, nodes: tuple[str, ...], *, freq
 
     events["u"] = np.minimum(source, target)
     events["v"] = np.maximum(source, target)
-    events["period"] = events["timestamp"].dt.to_period(frequency)
+    events["period"], calendar = temporal_windows(events["timestamp"], frequency)
     events["positive"] = (events["sentiment"] == 1).astype(int)
     events["negative"] = (events["sentiment"] == -1).astype(int)
 
-    grouped = events.groupby(["u", "v", "period"], observed=True)[["positive", "negative"]].sum().reset_index()
+    grouped = (
+        events.groupby(["u", "v", "period"], observed=True)[["positive", "negative"]]
+        .sum()
+        .reset_index()
+    )
     difference = grouped["positive"] - grouped["negative"]
     grouped["sign"] = np.select([difference > 0, difference < 0], ["+", "-"], default="mixed")
-    grouped["period_index"] = grouped["period"].astype("int64")
+    grouped["period_index"] = calendar.get_indexer(grouped["period"])
     grouped = grouped.sort_values(["u", "v", "period_index"])
 
     pairs = grouped.groupby(["u", "v"], sort=False)
@@ -105,9 +109,17 @@ def sign_transitions(interactions: pd.DataFrame, nodes: tuple[str, ...], *, freq
     return counts[columns]
 
 
-def compare_temporal_trajectories(interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN",
-                                  model: str = "signed", negative_fraction: float = 0.5, n_repetitions: int = 20,
-                                  seed: int = 0, shuffle_mode: str = "global") -> pd.DataFrame:
+def compare_temporal_trajectories(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    frequency: str = "W-SUN",
+    model: str = "signed",
+    negative_fraction: float = 0.5,
+    n_repetitions: int = 20,
+    seed: int = 0,
+    shuffle_mode: str = "global",
+) -> pd.DataFrame:
     """Compare real and shuffled trajectories using paired opinion initializations."""
     if n_repetitions < 1:
         raise ValueError("n_repetitions must be positive")
@@ -121,34 +133,44 @@ def compare_temporal_trajectories(interactions: pd.DataFrame, nodes: tuple[str, 
         initial_seed = int(rng.integers(0, np.iinfo(np.int64).max))
         shuffle_seed = int(rng.integers(0, np.iinfo(np.int64).max))
 
-        real = simulate_temporal_nco(real_snapshots, model=model, negative_fraction=negative_fraction, seed=initial_seed)
+        real = simulate_temporal_nco(
+            real_snapshots, model=model, negative_fraction=negative_fraction, seed=initial_seed
+        )
         shuffled_events = shuffle_timestamps(events, mode=shuffle_mode, seed=shuffle_seed)
         shuffled_snapshots = build_temporal_snapshots(shuffled_events, nodes, frequency=frequency)
-        shuffled = simulate_temporal_nco(shuffled_snapshots, model=model, initial_state=real.initial_state)
+        shuffled = simulate_temporal_nco(
+            shuffled_snapshots, model=model, initial_state=real.initial_state
+        )
 
         if real.steps != shuffled.steps:
             raise ValueError("Real and shuffled networks have different simulation horizons")
 
         for step in range(real.steps + 1):
-            records.append({
-                "repetition": repetition,
-                "step": step,
-                "variant": "real",
-                "positive_fraction": real.positive_fraction[step],
-                "switches": int(real.changed_count[step - 1]) if step else 0,
-            })
-            records.append({
-                "repetition": repetition,
-                "step": step,
-                "variant": "shuffled",
-                "positive_fraction": shuffled.positive_fraction[step],
-                "switches": int(shuffled.changed_count[step - 1]) if step else 0,
-            })
+            records.append(
+                {
+                    "repetition": repetition,
+                    "step": step,
+                    "variant": "real",
+                    "positive_fraction": real.positive_fraction[step],
+                    "switches": int(real.changed_count[step - 1]) if step else 0,
+                }
+            )
+            records.append(
+                {
+                    "repetition": repetition,
+                    "step": step,
+                    "variant": "shuffled",
+                    "positive_fraction": shuffled.positive_fraction[step],
+                    "switches": int(shuffled.changed_count[step - 1]) if step else 0,
+                }
+            )
 
     return pd.DataFrame(records)
 
 
-def paired_null_summary(results: pd.DataFrame, *, metric: str = "final_positive_fraction", confidence: float = 0.95) -> dict:
+def paired_null_summary(
+    results: pd.DataFrame, *, metric: str = "final_positive_fraction", confidence: float = 0.95
+) -> dict:
     """Compare real runs with the mean shuffled result for each initialization."""
     if not 0 < confidence < 1:
         raise ValueError("confidence must be between 0 and 1")
@@ -156,7 +178,9 @@ def paired_null_summary(results: pd.DataFrame, *, metric: str = "final_positive_
         raise ValueError(f"Missing metric: {metric}")
 
     real = results.loc[results["variant"] == "real"].set_index("initialization")[metric]
-    shuffled = results.loc[results["variant"] == "shuffled"].groupby("initialization")[metric].mean()
+    shuffled = (
+        results.loc[results["variant"] == "shuffled"].groupby("initialization")[metric].mean()
+    )
 
     if real.index.has_duplicates or not real.index.equals(shuffled.index):
         real, shuffled = real.align(shuffled, join="inner")
@@ -184,24 +208,43 @@ def paired_null_summary(results: pd.DataFrame, *, metric: str = "final_positive_
     }
 
 
-def resolution_ablation(interactions: pd.DataFrame, nodes: tuple[str, ...], *,
-                        frequencies: tuple[str, ...] = ("W-SUN", "2W-SUN", "M"), negative_fraction: float = 0.5,
-                        n_initializations: int = 20, n_shuffles: int = 20, seed: int = 0, shuffle_mode: str = "global") \
-        -> pd.DataFrame:
+def resolution_ablation(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    frequencies: tuple[str, ...] = ("W-SUN", "2W-SUN", "M"),
+    negative_fraction: float = 0.5,
+    n_initializations: int = 20,
+    n_shuffles: int = 20,
+    seed: int = 0,
+    shuffle_mode: str = "global",
+    n_bootstrap: int = 2000,
+) -> pd.DataFrame:
     """Evaluate real-versus-shuffled dynamics across temporal resolutions."""
     events = filter_core_events(interactions, nodes)
     records = []
 
     for frequency in frequencies:
         results = evaluate_timestamp_nulls(
-            events, nodes, frequency=frequency, negative_fraction=negative_fraction,
-            n_initializations=n_initializations, n_shuffles=n_shuffles,
-            seed=seed, mode=shuffle_mode,
+            events,
+            nodes,
+            frequency=frequency,
+            negative_fraction=negative_fraction,
+            n_initializations=n_initializations,
+            n_shuffles=n_shuffles,
+            seed=seed,
+            mode=shuffle_mode,
         )
 
-        for metric in ("final_positive_fraction", "total_switches"):
-            summary = paired_null_summary(results, metric=metric)
-            records.append({"frequency": frequency, **summary})
+        results["f"] = negative_fraction
+        summary = paired_bootstrap_summary(
+            results,
+            metrics=("final_positive_fraction", "total_switches"),
+            n_bootstrap=n_bootstrap,
+            seed=seed,
+        )
+        summary["frequency"] = frequency
+        records.extend(summary.to_dict("records"))
 
     return pd.DataFrame(records)
 
@@ -211,7 +254,9 @@ def plot_temporal_activity(activity: pd.DataFrame, output: str | Path) -> None:
     fig, ax = plt.subplots(figsize=(11, 4))
     ax.plot(activity["timestamp"], activity["positive"], label="Non-negative events")
     ax.plot(activity["timestamp"], activity["negative"], label="Negative events")
-    ax.set(xlabel="Time", ylabel="Number of interactions", title="Temporal Reddit interaction activity")
+    ax.set(
+        xlabel="Time", ylabel="Number of interactions", title="Temporal Reddit interaction activity"
+    )
     ax.legend()
     fig.autofmt_xdate()
     fig.tight_layout()
@@ -240,26 +285,37 @@ def plot_temporal_trajectories(trajectories: pd.DataFrame, output: str | Path) -
     plt.close(fig)
 
 
-def plot_resolution_ablation(ablation: pd.DataFrame, output: str | Path, *, metric: str = "final_positive_fraction") -> None:
+def plot_resolution_ablation(
+    ablation: pd.DataFrame, output: str | Path, *, metric: str = "final_positive_fraction"
+) -> None:
     """Plot paired real-minus-shuffled differences across time resolutions."""
     data = ablation.loc[ablation["metric"] == metric].copy()
     positions = np.arange(len(data))
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.errorbar(positions, data["difference"], yerr=[
-        data["difference"] - data["ci_low"],
-        data["ci_high"] - data["difference"],
-        ], fmt="o", capsize=4)
+    ax.errorbar(
+        positions,
+        data["difference"],
+        yerr=[
+            data["difference"] - data["ci_low"],
+            data["ci_high"] - data["difference"],
+        ],
+        fmt="o",
+        capsize=4,
+    )
 
     ax.axhline(0, linestyle="--", linewidth=1)
     ax.set_xticks(positions, data["frequency"])
-    ax.set(xlabel="Time window", ylabel="Real - shuffled", title=f"Resolution sensitivity: {metric}")
+    ax.set(
+        xlabel="Time window", ylabel="Real - shuffled", title=f"Resolution sensitivity: {metric}"
+    )
     fig.tight_layout()
     fig.savefig(output, dpi=180)
     plt.close(fig)
 
 
 # Consolidated temporal experiment, robustness and comparison functions.
+
 
 def lifetime_topology(interactions: pd.DataFrame, nodes: tuple[str, ...]) -> csr_matrix:
     """Build the undirected union of all observed edges."""
@@ -269,7 +325,9 @@ def lifetime_topology(interactions: pd.DataFrame, nodes: tuple[str, ...]) -> csr
     v = events["target"].map(index).to_numpy(dtype=np.int64)
     rows = np.concatenate((u, v))
     cols = np.concatenate((v, u))
-    graph = csr_matrix((np.ones(len(rows), dtype=np.int8), (rows, cols)), shape=(len(nodes), len(nodes)))
+    graph = csr_matrix(
+        (np.ones(len(rows), dtype=np.int8), (rows, cols)), shape=(len(nodes), len(nodes))
+    )
     graph.sum_duplicates()
     graph.data[:] = 1
     return graph
@@ -308,7 +366,17 @@ def opinion_metrics(graph: csr_matrix, state: np.ndarray) -> dict:
     }
 
 
-def run_fraction_sweep(interactions: pd.DataFrame, nodes: tuple[str, ...], *, fractions: tuple[float, ...] = tuple(np.round(np.arange(0.1, 1.0, 0.1), 2)), frequency: str = "W-SUN", n_initializations: int = 20, n_shuffles: int = 20, seed: int = 42, modes: tuple[str, ...] = ("global", "within_source")) -> pd.DataFrame:
+def run_fraction_sweep(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    fractions: tuple[float, ...] = tuple(np.round(np.arange(0.1, 1.0, 0.1), 2)),
+    frequency: str = "W-SUN",
+    n_initializations: int = 20,
+    n_shuffles: int = 20,
+    seed: int = 42,
+    modes: tuple[str, ...] = ("global", "within_source"),
+) -> pd.DataFrame:
     """Run paired real-versus-null experiments across initial opinion fractions."""
     if n_initializations < 1 or n_shuffles < 1:
         raise ValueError("Repetition counts must be positive")
@@ -341,45 +409,60 @@ def run_fraction_sweep(interactions: pd.DataFrame, nodes: tuple[str, ...], *, fr
             for variant, shuffle_id, snapshots in snapshot_sets:
                 result = simulate_temporal_nco(snapshots, initial_state=initial_state)
                 metrics = opinion_metrics(graph, result.final_state)
-                records.append({
-                    "f": float(f),
-                    "initialization": initialization,
-                    "initial_seed": initial_seed,
-                    "variant": variant,
-                    "shuffle": shuffle_id,
-                    "frequency": frequency,
-                    "total_switches": int(result.changed_count.sum()),
-                    "final_week_switches": int(result.changed_count[-1]) if result.steps else 0,
-                    **metrics,
-                })
+                records.append(
+                    {
+                        "f": float(f),
+                        "initialization": initialization,
+                        "initial_seed": initial_seed,
+                        "variant": variant,
+                        "shuffle": shuffle_id,
+                        "frequency": frequency,
+                        "total_switches": int(result.changed_count.sum()),
+                        "final_week_switches": int(result.changed_count[-1]) if result.steps else 0,
+                        **metrics,
+                    }
+                )
 
     return pd.DataFrame.from_records(records)
 
 
 def paired_fraction_summary(results: pd.DataFrame) -> pd.DataFrame:
     """Summarize real-minus-null effects, pairing by f and initial opinion configuration."""
-    metrics = ("absolute_magnetization", "minority_fraction", "largest_opinion_gcc_fraction", "total_switches")
+    metrics = (
+        "absolute_magnetization",
+        "minority_fraction",
+        "largest_opinion_gcc_fraction",
+        "total_switches",
+    )
     records = []
 
-    for (f, variant), group in results.loc[results["variant"] != "real"].groupby(["f", "variant"], sort=True):
-        real = results.loc[(results["f"] == f) & (results["variant"] == "real")].set_index("initialization")
+    for (f, variant), group in results.loc[results["variant"] != "real"].groupby(
+        ["f", "variant"], sort=True
+    ):
+        real = results.loc[(results["f"] == f) & (results["variant"] == "real")].set_index(
+            "initialization"
+        )
         null = group.groupby("initialization")[list(metrics)].mean()
         shared = real.index.intersection(null.index)
 
         for metric in metrics:
-            differences = (real.loc[shared, metric] - null.loc[shared, metric]).to_numpy(dtype=float)
+            differences = (real.loc[shared, metric] - null.loc[shared, metric]).to_numpy(
+                dtype=float
+            )
             n = len(differences)
             sem = float(differences.std(ddof=1) / np.sqrt(n)) if n > 1 else np.nan
-            records.append({
-                "f": f,
-                "variant": variant,
-                "metric": metric,
-                "n_initializations": n,
-                "real_mean": float(real.loc[shared, metric].mean()),
-                "null_mean": float(null.loc[shared, metric].mean()),
-                "difference": float(differences.mean()),
-                "standard_error": sem,
-            })
+            records.append(
+                {
+                    "f": f,
+                    "variant": variant,
+                    "metric": metric,
+                    "n_initializations": n,
+                    "real_mean": float(real.loc[shared, metric].mean()),
+                    "null_mean": float(null.loc[shared, metric].mean()),
+                    "difference": float(differences.mean()),
+                    "standard_error": sem,
+                }
+            )
 
     return pd.DataFrame(records)
 
@@ -391,7 +474,14 @@ def shuffle_sentiments(interactions: pd.DataFrame, *, seed: int) -> pd.DataFrame
     return result
 
 
-def sign_persistence_null(interactions: pd.DataFrame, nodes: tuple[str, ...], *, frequency: str = "W-SUN", n_shuffles: int = 30, seed: int = 42) -> pd.DataFrame:
+def sign_persistence_null(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    frequency: str = "W-SUN",
+    n_shuffles: int = 30,
+    seed: int = 42,
+) -> pd.DataFrame:
     """Compare real weekly dyad-sign transitions with globally shuffled sentiment labels."""
     if n_shuffles < 1:
         raise ValueError("n_shuffles must be positive")
@@ -401,7 +491,11 @@ def sign_persistence_null(interactions: pd.DataFrame, nodes: tuple[str, ...], *,
     records = []
 
     for realization in range(-1, n_shuffles):
-        sample = events if realization == -1 else shuffle_sentiments(events, seed=int(rng.integers(0, np.iinfo(np.int64).max)))
+        sample = (
+            events
+            if realization == -1
+            else shuffle_sentiments(events, seed=int(rng.integers(0, np.iinfo(np.int64).max)))
+        )
         transitions = sign_transitions(sample, nodes, frequency=frequency)
         counts = {(r.previous, r.current): int(r.count) for r in transitions.itertuples()}
 
@@ -409,15 +503,17 @@ def sign_persistence_null(interactions: pd.DataFrame, nodes: tuple[str, ...], *,
             denominator = sum(counts.get((previous, current), 0) for current in ("+", "-", "mixed"))
             for current in ("+", "-", "mixed"):
                 count = counts.get((previous, current), 0)
-                records.append({
-                    "variant": "real" if realization == -1 else "sign_shuffled",
-                    "realization": realization,
-                    "previous": previous,
-                    "current": current,
-                    "count": count,
-                    "denominator": denominator,
-                    "probability": count / denominator if denominator else np.nan,
-                })
+                records.append(
+                    {
+                        "variant": "real" if realization == -1 else "sign_shuffled",
+                        "realization": realization,
+                        "previous": previous,
+                        "current": current,
+                        "count": count,
+                        "denominator": denominator,
+                        "probability": count / denominator if denominator else np.nan,
+                    }
+                )
 
     return pd.DataFrame(records)
 
@@ -426,20 +522,36 @@ def sign_persistence_summary(transitions: pd.DataFrame) -> pd.DataFrame:
     """Summarize transition probabilities across sign-shuffled null realizations."""
     real = transitions.loc[transitions["variant"] == "real"]
     null = transitions.loc[transitions["variant"] == "sign_shuffled"]
-    summaries = null.groupby(["previous", "current"])["probability"].agg(["mean", "std"]).reset_index()
+    summaries = (
+        null.groupby(["previous", "current"])["probability"].agg(["mean", "std"]).reset_index()
+    )
     summaries = summaries.rename(columns={"mean": "null_mean", "std": "null_std"})
-    return real[["previous", "current", "probability", "count"]].merge(summaries, on=["previous", "current"]).rename(columns={"probability": "real_probability"})
+    return (
+        real[["previous", "current", "probability", "count"]]
+        .merge(summaries, on=["previous", "current"])
+        .rename(columns={"probability": "real_probability"})
+    )
 
 
 def minority_connectivity(graph, state: np.ndarray) -> dict:
     """Measure connectivity among nodes holding the less frequent opinion."""
     state = np.asarray(state)
-    if state.ndim != 1 or graph.shape != (len(state), len(state)) or not np.isin(state, (-1, 1)).all():
+    if (
+        state.ndim != 1
+        or graph.shape != (len(state), len(state))
+        or not np.isin(state, (-1, 1)).all()
+    ):
         raise ValueError("Invalid graph or opinion state")
 
     n = len(state)
     if n == 0:
-        return {"minority_count": 0, "minority_lcc": 0, "minority_lcc_fraction": 0.0, "minority_component_count": 0, "minority_isolated_fraction": 0.0}
+        return {
+            "minority_count": 0,
+            "minority_lcc": 0,
+            "minority_lcc_fraction": 0.0,
+            "minority_component_count": 0,
+            "minority_isolated_fraction": 0.0,
+        }
 
     positive = int(np.count_nonzero(state == 1))
     negative = n - positive
@@ -447,7 +559,13 @@ def minority_connectivity(graph, state: np.ndarray) -> dict:
     selected = np.flatnonzero(state == minority)
 
     if len(selected) == 0:
-        return {"minority_count": 0, "minority_lcc": 0, "minority_lcc_fraction": 0.0, "minority_component_count": 0, "minority_isolated_fraction": 0.0}
+        return {
+            "minority_count": 0,
+            "minority_lcc": 0,
+            "minority_lcc_fraction": 0.0,
+            "minority_component_count": 0,
+            "minority_isolated_fraction": 0.0,
+        }
 
     subgraph = graph[selected][:, selected].tocsr()
     n_components, labels = connected_components(subgraph, directed=False)
@@ -463,9 +581,23 @@ def minority_connectivity(graph, state: np.ndarray) -> dict:
     }
 
 
-def run_minority_experiment(interactions: pd.DataFrame, nodes: tuple[str, ...], *, fractions: tuple[float, ...] = (0.3, 0.5, 0.7), n_initializations: int = 20, n_shuffles: int = 20, seed: int = 42, frequency: str = "W-SUN") -> pd.DataFrame:
+def run_minority_experiment(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    fractions: tuple[float, ...] = (0.3, 0.5, 0.7),
+    n_initializations: int = 20,
+    n_shuffles: int = 20,
+    seed: int = 42,
+    frequency: str = "W-SUN",
+) -> pd.DataFrame:
     """Compare final minority fragmentation on real and randomized temporal networks."""
-    if n_initializations < 1 or n_shuffles < 1 or not fractions or any(not 0 <= f <= 1 for f in fractions):
+    if (
+        n_initializations < 1
+        or n_shuffles < 1
+        or not fractions
+        or any(not 0 <= f <= 1 for f in fractions)
+    ):
         raise ValueError("Invalid experiment configuration")
 
     events = filter_core_events(interactions, nodes)
@@ -477,7 +609,9 @@ def run_minority_experiment(interactions: pd.DataFrame, nodes: tuple[str, ...], 
         for shuffle_id in range(n_shuffles):
             shuffle_seed = int(rng.integers(0, np.iinfo(np.int64).max))
             shuffled = shuffle_timestamps(events, mode=mode, seed=shuffle_seed)
-            snapshots.append((mode, shuffle_id, build_temporal_snapshots(shuffled, nodes, frequency=frequency)))
+            snapshots.append(
+                (mode, shuffle_id, build_temporal_snapshots(shuffled, nodes, frequency=frequency))
+            )
 
     records = []
 
@@ -489,14 +623,16 @@ def run_minority_experiment(interactions: pd.DataFrame, nodes: tuple[str, ...], 
             for variant, shuffle_id, network in snapshots:
                 result = simulate_temporal_nco(network, initial_state=initial)
                 metrics = minority_connectivity(graph, result.final_state)
-                records.append({
-                    "f": float(f),
-                    "initialization": initialization,
-                    "initial_seed": initial_seed,
-                    "variant": variant,
-                    "shuffle": shuffle_id,
-                    **metrics,
-                })
+                records.append(
+                    {
+                        "f": float(f),
+                        "initialization": initialization,
+                        "initial_seed": initial_seed,
+                        "variant": variant,
+                        "shuffle": shuffle_id,
+                        **metrics,
+                    }
+                )
 
     return pd.DataFrame(records)
 
@@ -521,7 +657,14 @@ def shuffle_source_sentiments(interactions: pd.DataFrame, *, seed: int = 42) -> 
     return result
 
 
-def compare_sign_persistence(interactions: pd.DataFrame, nodes: tuple[str, ...], *, n_shuffles: int = 100, seed: int = 42, frequency: str = "W-SUN") -> pd.DataFrame:
+def compare_sign_persistence(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    *,
+    n_shuffles: int = 100,
+    seed: int = 42,
+    frequency: str = "W-SUN",
+) -> pd.DataFrame:
     """Compare observed dyad transitions with global and source-conditioned sign nulls."""
     if n_shuffles < 1:
         raise ValueError("n_shuffles must be positive")
@@ -541,7 +684,9 @@ def compare_sign_persistence(interactions: pd.DataFrame, nodes: tuple[str, ...],
                 sample = events.copy()
                 sample["sentiment"] = rng.permutation(events["sentiment"].to_numpy())
             else:
-                sample = shuffle_source_sentiments(events, seed=int(rng.integers(0, np.iinfo(np.int64).max)))
+                sample = shuffle_source_sentiments(
+                    events, seed=int(rng.integers(0, np.iinfo(np.int64).max))
+                )
 
             transitions = sign_transitions(sample, nodes, frequency=frequency)
             counts = {(r.previous, r.current): int(r.count) for r in transitions.itertuples()}
@@ -551,15 +696,17 @@ def compare_sign_persistence(interactions: pd.DataFrame, nodes: tuple[str, ...],
 
                 for current in signs:
                     count = counts.get((previous, current), 0)
-                    records.append({
-                        "variant": variant,
-                        "realization": realization,
-                        "previous": previous,
-                        "current": current,
-                        "count": count,
-                        "denominator": denominator,
-                        "probability": count / denominator if denominator else np.nan,
-                    })
+                    records.append(
+                        {
+                            "variant": variant,
+                            "realization": realization,
+                            "previous": previous,
+                            "current": current,
+                            "count": count,
+                            "denominator": denominator,
+                            "probability": count / denominator if denominator else np.nan,
+                        }
+                    )
 
     return pd.DataFrame(records)
 
@@ -580,22 +727,58 @@ def summarize_sign_persistence(results: pd.DataFrame) -> pd.DataFrame:
             lower = (1 + np.count_nonzero(null <= observed)) / (len(null) + 1)
             upper = (1 + np.count_nonzero(null >= observed)) / (len(null) + 1)
 
-            records.append({
-                "variant": variant,
-                "previous": previous,
-                "current": current,
-                "observed": observed,
-                "null_mean": float(null.mean()),
-                "null_low": float(np.quantile(null, 0.025)),
-                "null_high": float(np.quantile(null, 0.975)),
-                "difference": float(observed - null.mean()),
-                "p_two_sided": min(1.0, 2 * min(lower, upper)),
-            })
+            records.append(
+                {
+                    "variant": variant,
+                    "previous": previous,
+                    "current": current,
+                    "observed": observed,
+                    "null_mean": float(null.mean()),
+                    "null_low": float(np.quantile(null, 0.025)),
+                    "null_high": float(np.quantile(null, 0.975)),
+                    "difference": float(observed - null.mean()),
+                    "p_two_sided": min(1.0, 2 * min(lower, upper)),
+                }
+            )
 
     return pd.DataFrame(records)
 
 
-def paired_bootstrap_summary(results: pd.DataFrame, *, metrics: tuple[str, ...], n_bootstrap: int = 2000, seed: int = 42, confidence: float = 0.95) -> pd.DataFrame:
+def paired_bootstrap_interval(
+    differences: np.ndarray,
+    *,
+    rng: np.random.Generator,
+    n_bootstrap: int,
+    confidence: float = 0.95,
+) -> tuple[float, float]:
+    """Resample paired differences over initializations and shared shuffle IDs.
+
+    Rows are initializations and columns are shuffled timelines. A single column
+    represents a comparison on the observed timeline only.
+    """
+    differences = np.asarray(differences, dtype=float)
+    if differences.ndim != 2 or 0 in differences.shape or not np.isfinite(differences).all():
+        raise ValueError("Bootstrap requires a complete finite matrix of paired differences")
+    if n_bootstrap < 1 or not 0 < confidence < 1:
+        raise ValueError("Invalid bootstrap configuration")
+    n_initializations, n_shuffles = differences.shape
+    estimates = np.empty(n_bootstrap)
+    for b in range(n_bootstrap):
+        i = rng.integers(0, n_initializations, size=n_initializations)
+        j = rng.integers(0, n_shuffles, size=n_shuffles) if n_shuffles > 1 else np.array([0])
+        estimates[b] = differences[np.ix_(i, j)].mean()
+    alpha = (1 - confidence) / 2
+    return float(np.quantile(estimates, alpha)), float(np.quantile(estimates, 1 - alpha))
+
+
+def paired_bootstrap_summary(
+    results: pd.DataFrame,
+    *,
+    metrics: tuple[str, ...],
+    n_bootstrap: int = 2000,
+    seed: int = 42,
+    confidence: float = 0.95,
+) -> pd.DataFrame:
     """Paired two-level bootstrap over initializations and shared null realizations."""
     if n_bootstrap < 1 or not 0 < confidence < 1:
         raise ValueError("Invalid bootstrap configuration")
@@ -604,12 +787,16 @@ def paired_bootstrap_summary(results: pd.DataFrame, *, metrics: tuple[str, ...],
     records = []
 
     for f, fraction_rows in results.groupby("f", sort=True):
-        real_rows = fraction_rows.loc[fraction_rows["variant"] == "real"].set_index("initialization")
+        real_rows = fraction_rows.loc[fraction_rows["variant"] == "real"].set_index(
+            "initialization"
+        )
 
         if real_rows.index.has_duplicates:
             raise ValueError("Duplicate real initialization")
 
-        for variant, null_rows in fraction_rows.loc[fraction_rows["variant"] != "real"].groupby("variant"):
+        for variant, null_rows in fraction_rows.loc[fraction_rows["variant"] != "real"].groupby(
+            "variant"
+        ):
             for metric in metrics:
                 if metric not in results.columns:
                     raise ValueError(f"Missing metric: {metric}")
@@ -619,35 +806,44 @@ def paired_bootstrap_summary(results: pd.DataFrame, *, metrics: tuple[str, ...],
                 real = aligned_real.to_numpy(dtype=float)
                 null = matrix.to_numpy(dtype=float)
 
-                if len(real) < 2 or null.shape[1] < 2 or not np.isfinite(real).all() or not np.isfinite(null).all():
-                    raise ValueError("Bootstrap requires complete paired runs and at least two null realizations")
+                if (
+                    len(real) < 2
+                    or null.shape[1] < 2
+                    or not np.isfinite(real).all()
+                    or not np.isfinite(null).all()
+                ):
+                    raise ValueError(
+                        "Bootstrap requires complete paired runs and at least two null realizations"
+                    )
 
                 effect = float(real.mean() - null.mean())
-                bootstraps = np.empty(n_bootstrap, dtype=float)
-
-                for b in range(n_bootstrap):
-                    i = rng.integers(0, len(real), size=len(real))
-                    j = rng.integers(0, null.shape[1], size=null.shape[1])
-                    bootstraps[b] = real[i].mean() - null[np.ix_(i, j)].mean()
-
-                alpha = (1 - confidence) / 2
-                records.append({
-                    "f": float(f),
-                    "variant": variant,
-                    "metric": metric,
-                    "n_initializations": len(real),
-                    "n_shuffles": null.shape[1],
-                    "real_mean": float(real.mean()),
-                    "null_mean": float(null.mean()),
-                    "difference": effect,
-                    "ci_low": float(np.quantile(bootstraps, alpha)),
-                    "ci_high": float(np.quantile(bootstraps, 1 - alpha)),
-                })
+                ci_low, ci_high = paired_bootstrap_interval(
+                    real[:, None] - null,
+                    rng=rng,
+                    n_bootstrap=n_bootstrap,
+                    confidence=confidence,
+                )
+                records.append(
+                    {
+                        "f": float(f),
+                        "variant": variant,
+                        "metric": metric,
+                        "n_initializations": len(real),
+                        "n_shuffles": null.shape[1],
+                        "real_mean": float(real.mean()),
+                        "null_mean": float(null.mean()),
+                        "difference": effect,
+                        "ci_low": ci_low,
+                        "ci_high": ci_high,
+                    }
+                )
 
     return pd.DataFrame(records)
 
 
-def simulate_static_fixed_horizon(matrix: csr_matrix, initial_state: np.ndarray, *, steps: int) -> dict:
+def simulate_static_fixed_horizon(
+    matrix: csr_matrix, initial_state: np.ndarray, *, steps: int
+) -> dict:
     """Apply static signed NCO for exactly the temporal experiment's number of steps."""
     if steps < 0:
         raise ValueError("steps must be nonnegative")
@@ -697,7 +893,17 @@ def final_metrics(graph: csr_matrix, state: np.ndarray, switches: np.ndarray) ->
     }
 
 
-def run_static_temporal_comparison(interactions: pd.DataFrame, nodes: tuple[str, ...], static_signed: csr_matrix, *, fractions: tuple[float, ...] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9), frequency: str = "W-SUN", n_initializations: int = 20, n_shuffles: int = 20, seed: int = 42) -> pd.DataFrame:
+def run_static_temporal_comparison(
+    interactions: pd.DataFrame,
+    nodes: tuple[str, ...],
+    static_signed: csr_matrix,
+    *,
+    fractions: tuple[float, ...] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
+    frequency: str = "W-SUN",
+    n_initializations: int = 20,
+    n_shuffles: int = 20,
+    seed: int = 42,
+) -> pd.DataFrame:
     """Compare static, observed temporal, and globally shuffled temporal NCO."""
     if n_initializations < 1 or n_shuffles < 1:
         raise ValueError("Repetition counts must be positive")
@@ -740,29 +946,55 @@ def run_static_temporal_comparison(interactions: pd.DataFrame, nodes: tuple[str,
 
             for shuffle_id, shuffle_seed, snapshots in null_snapshots:
                 null = simulate_temporal_nco(snapshots, model="signed", initial_state=initial)
-                outcomes.append(("temporal_shuffled", shuffle_id, shuffle_seed, null.final_state, null.changed_count))
+                outcomes.append(
+                    (
+                        "temporal_shuffled",
+                        shuffle_id,
+                        shuffle_seed,
+                        null.final_state,
+                        null.changed_count,
+                    )
+                )
 
             for variant, shuffle_id, shuffle_seed, final_state, switches in outcomes:
-                records.append({
-                    "f": float(f),
-                    "initialization": initialization,
-                    "initial_seed": initial_seed,
-                    "variant": variant,
-                    "shuffle": shuffle_id,
-                    "shuffle_seed": shuffle_seed,
-                    "frequency": frequency,
-                    "steps": horizon,
-                    "disagreement_with_static": float(np.mean(final_state != static["final_state"])) if len(nodes) else 0.0,
-                    "disagreement_with_real": float(np.mean(final_state != real.final_state)) if len(nodes) else 0.0,
-                    "static_first_fixed_point": static["first_fixed_point"],
-                    "static_first_repeated_state": static["first_repeated_state"],
-                    **final_metrics(graph, final_state, switches),
-                })
+                records.append(
+                    {
+                        "f": float(f),
+                        "initialization": initialization,
+                        "initial_seed": initial_seed,
+                        "variant": variant,
+                        "shuffle": shuffle_id,
+                        "shuffle_seed": shuffle_seed,
+                        "frequency": frequency,
+                        "steps": horizon,
+                        "disagreement_with_static": float(
+                            np.mean(final_state != static["final_state"])
+                        )
+                        if len(nodes)
+                        else 0.0,
+                        "disagreement_with_real": float(np.mean(final_state != real.final_state))
+                        if len(nodes)
+                        else 0.0,
+                        "static_first_fixed_point": static["first_fixed_point"],
+                        "static_first_repeated_state": static["first_repeated_state"],
+                        **final_metrics(graph, final_state, switches),
+                    }
+                )
 
     return pd.DataFrame(records)
 
 
-def summarize_static_temporal(results: pd.DataFrame, *, metrics: tuple[str, ...] = ("absolute_magnetization", "minority_fraction", "minority_lcc_fraction", "total_switches", "disagreement_with_static")) -> pd.DataFrame:
+def summarize_static_temporal(
+    results: pd.DataFrame,
+    *,
+    metrics: tuple[str, ...] = (
+        "absolute_magnetization",
+        "minority_fraction",
+        "minority_lcc_fraction",
+        "total_switches",
+        "disagreement_with_static",
+    ),
+) -> pd.DataFrame:
     """Return mean outcomes for all variants across initial opinion fractions."""
     columns = ["f", "variant", "metric", "mean", "std", "n_initializations", "n_shuffles"]
     records = []
@@ -777,14 +1009,18 @@ def summarize_static_temporal(results: pd.DataFrame, *, metrics: tuple[str, ...]
             else:
                 values = group.set_index("initialization")[metric]
 
-            records.append({
-                "f": float(f),
-                "variant": variant,
-                "metric": metric,
-                "mean": float(values.mean()),
-                "std": float(values.std(ddof=1)) if len(values) > 1 else np.nan,
-                "n_initializations": len(values),
-                "n_shuffles": group["shuffle"].nunique() if variant == "temporal_shuffled" else 0,
-            })
+            records.append(
+                {
+                    "f": float(f),
+                    "variant": variant,
+                    "metric": metric,
+                    "mean": float(values.mean()),
+                    "std": float(values.std(ddof=1)) if len(values) > 1 else np.nan,
+                    "n_initializations": len(values),
+                    "n_shuffles": group["shuffle"].nunique()
+                    if variant == "temporal_shuffled"
+                    else 0,
+                }
+            )
 
     return pd.DataFrame(records, columns=columns)

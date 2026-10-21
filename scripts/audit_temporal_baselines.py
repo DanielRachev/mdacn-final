@@ -1,4 +1,5 @@
 """Audit static NCO stopping behavior and timestamp-null structural invariants."""
+
 import argparse
 import json
 from datetime import datetime
@@ -20,7 +21,12 @@ def main() -> None:
     parser.add_argument("--nodes", type=Path, default=Path("data/processed/nodes.json"))
     parser.add_argument("--static", type=Path, default=Path("data/processed/signed.npz"))
     parser.add_argument("--output", type=Path, default=Path("reports/temporal_audit"))
-    parser.add_argument("--fractions", type=float, nargs="+", default=[round(x, 1) for x in np.arange(0.1, 1., 0.1)])
+    parser.add_argument(
+        "--fractions",
+        type=float,
+        nargs="+",
+        default=[round(x, 1) for x in np.arange(0.1, 1.0, 0.1)],
+    )
     parser.add_argument("--initializations", type=int, default=20)
     parser.add_argument("--max-steps", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=42)
@@ -41,12 +47,31 @@ def main() -> None:
     for f in args.fractions:
         for k in range(args.initializations):
             init_seed = int(rng.integers(0, np.iinfo(np.int64).max))
-            result = simulate_nco(signed, initialize_opinions(len(nodes), f, seed=init_seed), model="signed", max_steps=args.max_steps)
-            records.append({"f": f, "initialization": k, "initial_seed": init_seed, "stop_reason": result.stop_reason, "steps": result.steps, "period": result.cycle_length, "final_negative_fraction": float(np.mean(result.final_state == -1))})
+            result = simulate_nco(
+                signed,
+                initialize_opinions(len(nodes), f, seed=init_seed),
+                model="signed",
+                max_steps=args.max_steps,
+            )
+            records.append(
+                {
+                    "f": f,
+                    "initialization": k,
+                    "initial_seed": init_seed,
+                    "stop_reason": result.stop_reason,
+                    "steps": result.steps,
+                    "period": result.cycle_length,
+                    "final_negative_fraction": float(np.mean(result.final_state == -1)),
+                }
+            )
     table = pd.DataFrame(records)
     table.to_csv(folder / "static_stopping.csv", index=False)
     print("Timestamp shuffle preservation:", invariants)
-    print(table.groupby(["f", "stop_reason"]).agg(runs=("steps", "size"), mean_steps=("steps", "mean")).to_string())
+    print(
+        table.groupby(["f", "stop_reason"])
+        .agg(runs=("steps", "size"), mean_steps=("steps", "mean"))
+        .to_string()
+    )
     print(f"Saved to {folder}")
 
 

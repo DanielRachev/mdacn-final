@@ -1,4 +1,3 @@
-
 """Tests for temporal characterization and experimental analysis."""
 
 import numpy as np
@@ -6,10 +5,12 @@ import pandas as pd
 import pytest
 
 from mdacn.temporal_analysis import (
-    temporal_activity, sign_transitions, compare_temporal_trajectories,
-    paired_null_summary, resolution_ablation,
+    compare_temporal_trajectories,
+    paired_null_summary,
+    resolution_ablation,
+    sign_transitions,
+    temporal_activity,
 )
-
 
 NODES = ("A", "B", "C", "D")
 
@@ -60,16 +61,27 @@ def test_temporal_trajectories_are_paired_and_reproducible():
     assert len(first) == 3 * 2 * 5
     assert first["positive_fraction"].between(0, 1).all()
 
-    initial = first.loc[first["step"] == 0].pivot(index="repetition", columns="variant", values="positive_fraction")
+    initial = first.loc[first["step"] == 0].pivot(
+        index="repetition", columns="variant", values="positive_fraction"
+    )
     np.testing.assert_allclose(initial["real"], initial["shuffled"])
 
 
 def test_paired_null_summary():
-    results = pd.DataFrame([
-        (0, "real", 0.7), (0, "shuffled", 0.5), (0, "shuffled", 0.6),
-        (1, "real", 0.8), (1, "shuffled", 0.6), (1, "shuffled", 0.7),
-        (2, "real", 0.6), (2, "shuffled", 0.5), (2, "shuffled", 0.4),
-    ], columns=["initialization", "variant", "final_positive_fraction"])
+    results = pd.DataFrame(
+        [
+            (0, "real", 0.7),
+            (0, "shuffled", 0.5),
+            (0, "shuffled", 0.6),
+            (1, "real", 0.8),
+            (1, "shuffled", 0.6),
+            (1, "shuffled", 0.7),
+            (2, "real", 0.6),
+            (2, "shuffled", 0.5),
+            (2, "shuffled", 0.4),
+        ],
+        columns=["initialization", "variant", "final_positive_fraction"],
+    )
 
     summary = paired_null_summary(results)
 
@@ -80,12 +92,16 @@ def test_paired_null_summary():
 
 def test_resolution_ablation_runs():
     results = resolution_ablation(
-        make_events(), NODES, frequencies=("W-SUN", "M"),
-        n_initializations=3, n_shuffles=2, seed=42,
+        make_events(),
+        NODES,
+        frequencies=("W-SUN", "2W-SUN", "M"),
+        n_initializations=3,
+        n_shuffles=2,
+        seed=42,
     )
 
-    assert len(results) == 4
-    assert set(results["frequency"]) == {"W-SUN", "M"}
+    assert len(results) == 6
+    assert set(results["frequency"]) == {"W-SUN", "2W-SUN", "M"}
     assert set(results["metric"]) == {"final_positive_fraction", "total_switches"}
     assert np.isfinite(results["difference"]).all()
 
@@ -93,3 +109,39 @@ def test_resolution_ablation_runs():
 def test_invalid_repetitions():
     with pytest.raises(ValueError, match="positive"):
         compare_temporal_trajectories(make_events(), NODES, n_repetitions=0)
+
+
+def test_fortnightly_activity_signs_and_diagnostics_use_the_same_windows():
+    from mdacn.temporal_diagnostics import (
+        incident_edge_correlations,
+        node_activity_metrics,
+        sample_incident_pairs,
+    )
+
+    data = pd.DataFrame(
+        [
+            ("A", "B", 1, "2026-01-05"),
+            ("A", "B", 1, "2026-01-12"),
+            ("A", "C", 1, "2026-01-12"),
+            ("A", "C", -1, "2026-01-19"),
+            ("A", "C", -1, "2026-01-19"),
+            ("A", "B", -1, "2026-01-26"),
+        ],
+        columns=["source", "target", "sentiment", "timestamp"],
+    )
+    data["timestamp"] = pd.to_datetime(data["timestamp"])
+    data.index = [10, 20, 30, 40, 50, 60]
+
+    activity = temporal_activity(data, NODES, frequency="2W-SUN")
+    assert activity["total"].tolist() == [3, 3]
+    assert activity["positive"].tolist() == [3, 0]
+    transitions = sign_transitions(data, NODES, frequency="2W-SUN")
+    assert transitions[["previous", "current", "count"]].to_dict("records") == [
+        {"previous": "+", "current": "-", "count": 2},
+    ]
+    metrics = node_activity_metrics(data, NODES, frequency="2W-SUN").set_index("node")
+    assert metrics.loc["A", "weekly_fano"] == 0
+    assert metrics.loc["A", "active_windows"] == 2
+    pairs = sample_incident_pairs(data, NODES)
+    correlations = incident_edge_correlations(data, NODES, pairs, frequency="2W-SUN")
+    assert correlations["correlation"].tolist() == pytest.approx([-1.0])
