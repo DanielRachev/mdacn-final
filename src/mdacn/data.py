@@ -12,11 +12,17 @@ from scipy.sparse import csr_matrix
 
 from mdacn.contracts import NetworkMatrices
 
-DATASET_URL = "https://snap.stanford.edu/data/soc-redditHyperlinks-body.tsv"
+DATASET_URLS = {
+    source: f"https://snap.stanford.edu/data/soc-redditHyperlinks-{source}.tsv"
+    for source in ("body", "title")
+}
+DATASET_URL = DATASET_URLS["body"]
 
 
-def download_dataset(path: Path) -> Path:
-    """Download the body TSV, doing nothing if already exists"""
+def download_dataset(path: Path, *, dataset: Literal["body", "title"] = "body") -> Path:
+    """Download a SNAP link dataset, keeping an existing file."""
+    if dataset not in DATASET_URLS:
+        raise ValueError(f"Unknown link dataset: {dataset}")
     if path.is_file():
         return path
 
@@ -24,7 +30,7 @@ def download_dataset(path: Path) -> Path:
     temp = path.with_name(path.name + ".part")
 
     try:
-        with urlopen(DATASET_URL, timeout=60) as response, temp.open("wb") as output:
+        with urlopen(DATASET_URLS[dataset], timeout=60) as response, temp.open("wb") as output:
             copyfileobj(response, output)
         temp.replace(path)
     finally:
@@ -32,11 +38,11 @@ def download_dataset(path: Path) -> Path:
     return path
 
 
-def load_interactions(path: Path) -> pd.DataFrame:
-    """Owner: Jacek. Read the body TSV into the interaction table contract.
+def load_interactions(path: Path, *, include_post_id: bool = False) -> pd.DataFrame:
+    """Owner: Jacek. Read a body/title TSV into the interaction table contract.
 
     Return source, target, sentiment, and timestamp columns. Preserve directed
-    events and repeated interactions.
+    events and repeated interactions. Optionally retain post_id for overlap audits.
     """
     columns = {
         "SOURCE_SUBREDDIT": "source",
@@ -44,6 +50,8 @@ def load_interactions(path: Path) -> pd.DataFrame:
         "LINK_SENTIMENT": "sentiment",
         "TIMESTAMP": "timestamp",
     }
+    if include_post_id:
+        columns["POST_ID"] = "post_id"
 
     interactions = pd.read_csv(
         path, sep="\t", usecols=list(columns), dtype=str, keep_default_na=False
@@ -59,6 +67,8 @@ def load_interactions(path: Path) -> pd.DataFrame:
         | ~sentiments.isin([-1, 1])
         | timestamps.isna()
     )
+    if include_post_id:
+        invalid |= interactions["post_id"].str.strip().eq("")
 
     if invalid.any():
         lines = (interactions.index[invalid] + 2).tolist()

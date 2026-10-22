@@ -30,10 +30,14 @@ from mdacn.data import (
 from mdacn.plots import plot_core_communities, plot_degree_comparison, plot_degree_distribution
 
 
-def _graph_summary(graph: nx.Graph) -> dict[str, int | float | None]:
+def graph_summary(graph: nx.Graph) -> dict[str, int | float | None]:
+    """Count unsigned structure, aggregate signs, and retained non-self events."""
     n_nodes = graph.number_of_nodes()
     n_edges = graph.number_of_edges()
     n_negative = sum(edge["sign"] == -1 for _, _, edge in graph.edges(data=True))
+    n_zero = sum(edge["sign"] == 0 for _, _, edge in graph.edges(data=True))
+    n_positive = n_edges - n_negative - n_zero
+    degrees = [degree for _, degree in graph.degree()]
 
     return {
         "nodes": n_nodes,
@@ -41,8 +45,51 @@ def _graph_summary(graph: nx.Graph) -> dict[str, int | float | None]:
         "connected_components": nx.number_connected_components(graph),
         "average_degree": (2 * n_edges / n_nodes) if n_nodes else 0.0,
         "density": nx.density(graph),
+        "minimum_degree": min(degrees) if degrees else 0,
+        "maximum_degree": max(degrees) if degrees else 0,
+        "non_self_interactions": sum(
+            edge["n_positive"] + edge["n_negative"] for _, _, edge in graph.edges(data=True)
+        ),
+        "positive_edges": n_positive,
+        "negative_edges": n_negative,
+        "zero_edges": n_zero,
+        "positive_edge_fraction": (n_positive / n_edges) if n_edges else None,
         "negative_edge_fraction": (n_negative / n_edges) if n_edges else None,
+        "zero_edge_fraction": (n_zero / n_edges) if n_edges else None,
     }
+
+
+def characterise_core(core: nx.Graph, *, seed: int, processed_dir: Path) -> dict[str, object]:
+    """Export a core and its measurements; empty selections have missing metrics."""
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    network = build_matrices(core)
+    communities = detect_communities(core, seed=seed) if core else {}
+    nx.set_node_attributes(core, communities, "community")
+    export_graph(core, processed_dir / "core.graphml")
+    save_npz(processed_dir / "unsigned.npz", network.unsigned)
+    save_npz(processed_dir / "signed.npz", network.signed)
+    (processed_dir / "nodes.json").write_text(json.dumps(network.nodes, indent=2) + "\n")
+    pd.DataFrame(
+        {"node": network.nodes, "community": [communities[node] for node in network.nodes]}
+    ).to_csv(processed_dir / "communities.csv", index=False)
+    if not core:
+        return dict.fromkeys(
+            (
+                "degree_assortativity",
+                "community_count",
+                "modularity",
+                "average_clustering",
+                "spectral_radius",
+                "algebraic_connectivity",
+            )
+        )
+    metrics = {
+        "degree_assortativity": degree_assortativity(core),
+        "community_count": len(set(communities.values())),
+        **community_metrics(core, communities),
+        **spectral_metrics(network.unsigned),
+    }
+    return {name: value if math.isfinite(value) else None for name, value in metrics.items()}
 
 
 def characterise(
@@ -91,19 +138,9 @@ def characterise(
     processed_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
     export_graph(graph, processed_dir / "aggregate.graphml")
-    network = build_matrices(core)
-    save_npz(processed_dir / "unsigned.npz", network.unsigned)
-    save_npz(processed_dir / "signed.npz", network.signed)
-    (processed_dir / "nodes.json").write_text(json.dumps(network.nodes, indent=2) + "\n")
-
     print("Computing communities, degree fits, and spectral metrics...")
-    communities = detect_communities(core, seed=seed)
-    nx.set_node_attributes(core, communities, "community")
-    export_graph(core, processed_dir / "core.graphml")
-
-    pd.DataFrame(
-        {"node": network.nodes, "community": [communities[node] for node in network.nodes]}
-    ).to_csv(processed_dir / "communities.csv", index=False)
+    metrics = characterise_core(core, seed=seed, processed_dir=processed_dir)
+    nodes = tuple(sorted(core))
 
     distribution = degree_distribution(core)
     fits = fit_degree_baselines(core)
@@ -113,21 +150,14 @@ def characterise(
     distribution.to_csv(results_dir / "degree_distribution.csv", index=False)
     fits.to_csv(results_dir / "degree_fits.csv", index=False)
 
-    metrics = {
-        "degree_assortativity": degree_assortativity(core),
-        "community_count": len(set(communities.values())),
-        **community_metrics(core, communities),
-        **spectral_metrics(network.unsigned),
-    }
-
     print("Computing the full-core unsigned layout...", flush=True)
     positions = nx.spring_layout(core, seed=seed, weight=None, iterations=100, method="force")
     pd.DataFrame(
         {
-            "node": network.nodes,
-            "x": [positions[node][0] for node in network.nodes],
-            "y": [positions[node][1] for node in network.nodes],
-            "community": [communities[node] for node in network.nodes],
+            "node": nodes,
+            "x": [positions[node][0] for node in nodes],
+            "y": [positions[node][1] for node in nodes],
+            "community": [core.nodes[node]["community"] for node in nodes],
         }
     ).to_csv(results_dir / "core_layout.csv", index=False)
 
@@ -149,11 +179,9 @@ def characterise(
             "largest_connected_component": True,
             "seed": seed,
         },
-        "aggregate": _graph_summary(graph),
-        "core": _graph_summary(core),
-        "metrics": {
-            name: value if math.isfinite(value) else None for name, value in metrics.items()
-        },
+        "aggregate": graph_summary(graph),
+        "core": graph_summary(core),
+        "metrics": metrics,
         "degree_fit_method": "Discrete MLE on k>= smallest positive core degree; no bootstrap",
         "layout": {
             "method": "Unsigned spring layout; force method",

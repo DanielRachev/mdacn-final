@@ -17,8 +17,10 @@ uv run python -m mdacn sign-shuffle --realizations 20 --seed 0 --max-steps 1000
 
 | Command        | Action                                                                                   |
 |----------------|------------------------------------------------------------------------------------------|
-| `setup`        | Download the body TSV; reuse an existing file.                                           |
+| `setup`        | Download the body TSV (or title TSV with `--dataset title`); reuse an existing file.     |
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
+| `compare-extractions` | Compare k = 8, 10, 12 and activity >= 100, exporting each core separately.           |
+| `compare-link-sources` | Compare body/title coverage, overlap, signs, and 10-core membership.               |
 | `nco`          | Compare unsigned and signed dynamics on the exported core.                               |
 | `sign-shuffle` | Compare empirical signed dynamics with shuffled edge signs on the same core. |
 
@@ -30,6 +32,19 @@ uv run python -m mdacn characterise --core-method activity_lcc --min-interaction
 ```
 
 Use each command's `--help` for input paths, output paths, and experiment options.
+
+Run Jacek's structural comparisons separately from the simulation experiments:
+
+```bash
+uv run python -m mdacn compare-extractions
+uv run python -m mdacn setup --dataset title
+uv run python -m mdacn compare-link-sources
+```
+
+The extraction comparison uses seed 0 and writes to its own output directories.
+It exports each graph with its matching matrices and `nodes.json`; changing
+extraction changes the node set. The title audit measures feasibility without
+running opinion dynamics. See [measured findings and handoff](docs/extraction_comparison.md).
 
 `sign-shuffle` shows a progress bar with elapsed time and ETA. Each step completes
 one empirical/shuffled pair. The sweep reuses the core topology to avoid copying
@@ -75,6 +90,9 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 | `results/topology/core_layout.csv`, `core_communities.png`, `.pdf`                               | Full-core layout coordinates, community labels, and figures.                      |
 | `results/nco/`                                                                                   | Simulation results, raw-fraction and opinion-GCC summaries/figures, and metadata. |
 | `results/sign_shuffle/` | Sign-shuffle results, component summaries/figures, metadata, and node order. |
+| `data/processed/extraction_comparison/<configuration>/` | Separate core graphs, matrices, communities, and node orders for Georgi. |
+| `results/extraction_comparison/` | Comparison CSV/JSON, per-core metrics, degree distributions, tables, and figures. |
+| `results/link_sources/` | Body/title summaries, overlap CSV/JSON, and a core-membership table. |
 
 Generated files are ignored by Git. Reruns replace outputs in the selected
 directories. Rerun preprocessing after changing data rules.
