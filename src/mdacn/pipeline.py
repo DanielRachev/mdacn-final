@@ -1,6 +1,5 @@
 """Run preprocessing and characterisation pipeline"""
 
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -8,8 +7,8 @@ from typing import Literal
 
 import networkx as nx
 import pandas as pd
-from scipy.sparse import save_npz
 
+from mdacn.artifacts import checksum
 from mdacn.characterisation import (
     community_metrics,
     degree_assortativity,
@@ -18,6 +17,7 @@ from mdacn.characterisation import (
     fit_degree_baselines,
     spectral_metrics,
 )
+from mdacn.config import processed_paths
 from mdacn.data import (
     DATASET_URL,
     aggregate_edges,
@@ -26,6 +26,7 @@ from mdacn.data import (
     extract_core,
     largest_component,
     load_interactions,
+    save_matrices,
 )
 from mdacn.plots import plot_degree_distribution
 
@@ -64,15 +65,14 @@ def characterise(
     interactions = load_interactions(input_path)
     if interactions.empty:
         raise ValueError("The input contains no interactions")
-    with input_path.open("rb") as raw:
-        checksum = hashlib.file_digest(raw, "sha256").hexdigest()
+    input_checksum = checksum(input_path)
     self_links = int((interactions["source"] == interactions["target"]).sum())
 
     graph = aggregate_edges(interactions)
     graph.graph.update(
         dataset_url=DATASET_URL,
         source_path=str(input_path.resolve()),
-        input_sha256=checksum,
+        input_sha256=input_checksum,
         self_interactions_removed=self_links,
     )
     core = largest_component(
@@ -89,21 +89,20 @@ def characterise(
     print(f"Core: {len(core):,} nodes, {core.number_of_edges():,} edges")
 
     processed_dir.mkdir(parents=True, exist_ok=True)
+    paths = processed_paths(processed_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
-    export_graph(graph, processed_dir / "aggregate.graphml")
+    export_graph(graph, paths["aggregate"])
     network = build_matrices(core)
-    save_npz(processed_dir / "unsigned.npz", network.unsigned)
-    save_npz(processed_dir / "signed.npz", network.signed)
-    (processed_dir / "nodes.json").write_text(json.dumps(network.nodes, indent=2) + "\n")
 
     print("Computing communities, degree fits, and spectral metrics...")
     communities = detect_communities(core, seed=seed)
     nx.set_node_attributes(core, communities, "community")
-    export_graph(core, processed_dir / "core.graphml")
+    export_graph(core, paths["core"])
+    save_matrices(network, paths["core"])
 
     pd.DataFrame(
         {"node": network.nodes, "community": [communities[node] for node in network.nodes]}
-    ).to_csv(processed_dir / "communities.csv", index=False)
+    ).to_csv(paths["communities"], index=False)
 
     distribution = degree_distribution(core)
     fits = fit_degree_baselines(core)
@@ -121,7 +120,7 @@ def characterise(
         "input": {
             "path": str(input_path.resolve()),
             "dataset_url": DATASET_URL,
-            "sha256": checksum,
+            "sha256": input_checksum,
             "interactions": len(interactions),
             "self_interactions_removed": self_links,
             "non_self_interactions": len(interactions) - self_links,

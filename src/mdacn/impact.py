@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 
-from mdacn.data import build_matrices
+from mdacn.contracts import NetworkMatrices
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.interventions import opposing_cluster_size, simulate_ico
 
@@ -77,6 +77,7 @@ def validate_design(
 
 def iter_node_impacts(
     graph: nx.Graph,
+    network: NetworkMatrices,
     sample_nodes: tuple[str, ...],
     *,
     fractions: tuple[float, ...] = (0.5,),
@@ -95,7 +96,8 @@ def iter_node_impacts(
     Nonsteady interventions retain terminal impact, excluded from primary analysis.
     """
     validate_design(fractions, models, realizations, max_steps)
-    network = build_matrices(graph)
+    if network.nodes != tuple(sorted(graph)):
+        raise ValueError("Saved matrices must use the core node order")
     if not sample_nodes or len(set(sample_nodes)) != len(sample_nodes):
         raise ValueError("sample_nodes must be nonempty and unique")
     if not set(sample_nodes) <= set(network.nodes):

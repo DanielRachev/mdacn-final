@@ -117,24 +117,3 @@ def opposing_cluster_size(graph: nx.Graph, nodes: tuple[str, ...], state: Opinio
     if subgraph.number_of_nodes() == 0:
         return 0
     return max(len(component) for component in nx.connected_components(subgraph))
-
-
-def _degree_scores(graph: nx.Graph) -> dict[str, float]:
-    return dict(graph.degree())
-
-
-def _leverage_scores(graph: nx.Graph) -> dict[str, float]:
-    """Compute node leverage centrality on an undirected graph."""
-    degrees = dict(graph.degree())
-    scores: dict[str, float] = {}
-    for node in graph:
-        degree = degrees.get(node, 0)
-        if degree == 0:
-            scores[node] = 0.0
-            continue
-        total = 0.0
-        for neighbor in graph.neighbors(node):
-            neighbor_degree = degrees.get(neighbor, 0)
-            total += (degree - neighbor_degree) / (degree + neighbor_degree)
-        scores[node] = total / degree
-    return scores

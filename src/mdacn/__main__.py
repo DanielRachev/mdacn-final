@@ -52,32 +52,26 @@ def main() -> None:
         "--results-dir", type=Path, default=Path(config.PATHS["results_dir"])
     )
 
-    nco = commands.add_parser("nco", help="Compare unsigned and signed NCO on the saved core")
-    nco.add_argument(
-        "--graph", type=Path, default=Path(config.PATHS["processed_dir"]) / "core.graphml"
-    )
-    nco.add_argument("--results-dir", type=Path, default=Path(config.PATHS["results_dir"]) / "nco")
-    nco.add_argument("--fractions", type=float, nargs="+", default=config.SIMULATION["fractions"])
-    nco.add_argument("--realizations", type=int, default=config.SIMULATION["realizations"])
-    nco.add_argument("--seed", type=int, default=config.SIMULATION["seed"])
-    nco.add_argument("--max-steps", type=int, default=config.SIMULATION["max_steps"])
+    simulation_commands = {
+        "nco": "Compare unsigned and signed NCO on the saved core",
+        "sign-shuffle": "Compare empirical signed NCO against a sign-shuffled null model",
+        "ico": "Run existing random, degree, and leverage ICO interventions",
+    }
+    paths = config.stage_paths()
+    for name, help_text in simulation_commands.items():
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("--graph", type=Path, default=paths["core"])
+        command.add_argument("--results-dir", type=Path, default=paths[name])
+        command.add_argument(
+            "--fractions", type=float, nargs="+", default=config.SIMULATION["fractions"]
+        )
+        command.add_argument("--realizations", type=int, default=config.SIMULATION["realizations"])
+        command.add_argument("--seed", type=int, default=config.SIMULATION["seed"])
+        command.add_argument("--max-steps", type=int, default=config.SIMULATION["max_steps"])
+        if name == "ico":
+            command.add_argument("--budgets", type=float, nargs="+", default=config.ICO["budgets"])
 
-    sign_shuffle = commands.add_parser(
-        "sign-shuffle", help="Compare empirical signed NCO against sign-shuffled null model"
-    )
-    sign_shuffle.add_argument(
-        "--graph", type=Path, default=Path(config.PATHS["processed_dir"]) / "core.graphml"
-    )
-    sign_shuffle.add_argument(
-        "--results-dir", type=Path, default=Path(config.PATHS["results_dir"]) / "sign_shuffle"
-    )
-    sign_shuffle.add_argument(
-        "--fractions", type=float, nargs="+", default=config.SIMULATION["fractions"]
-    )
-    sign_shuffle.add_argument("--realizations", type=int, default=config.SIMULATION["realizations"])
-    sign_shuffle.add_argument("--seed", type=int, default=config.SIMULATION["seed"])
-    sign_shuffle.add_argument("--max-steps", type=int, default=config.SIMULATION["max_steps"])
-
+    commands.add_parser("centrality", help="Calculate and save the existing core centrality scores")
     commands.add_parser("features", help="Save node scores for subsequent experiments")
     commands.add_parser("node-impact", help="Run paired interventions using saved node scores")
     commands.add_parser(
@@ -101,7 +95,7 @@ def main() -> None:
                 processed_dir=args.processed_dir,
                 results_dir=args.results_dir,
             )
-        elif args.command in ("nco", "sign-shuffle"):
+        elif args.command in simulation_commands:
             run_stage(
                 args.command,
                 graph_path=args.graph,
@@ -110,6 +104,7 @@ def main() -> None:
                 realizations=args.realizations,
                 seed=args.seed,
                 max_steps=args.max_steps,
+                **({"budgets": tuple(args.budgets)} if args.command == "ico" else {}),
             )
         else:
             run_stage(args.command)

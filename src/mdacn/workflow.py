@@ -3,14 +3,27 @@
 from pathlib import Path
 
 from mdacn import config
+from mdacn.artifacts import checksum, write_json
+from mdacn.centrality_pipeline import load_centrality_scores, save_centrality_scores
 from mdacn.data import download_dataset, load_graph
 from mdacn.features import validate_features
-from mdacn.impact_pipeline import _checksum, _read_features, _write_json, save_impact_reports
+from mdacn.ico_pipeline import run_ico_experiment, save_ico_reports
+from mdacn.impact_pipeline import _read_features, save_impact_reports
 from mdacn.impact_workflow import run_node_impact
 from mdacn.nco_pipeline import run_nco_experiment, run_sign_shuffle_experiment, save_nco_reports
 from mdacn.pipeline import characterise
 
-STAGES = ("setup", "characterise", "features", "nco", "sign-shuffle", "node-impact", "reports")
+STAGES = (
+    "setup",
+    "characterise",
+    "centrality",
+    "features",
+    "nco",
+    "sign-shuffle",
+    "ico",
+    "node-impact",
+    "reports",
+)
 
 
 def _require(paths: list[Path], stage: str) -> None:
@@ -23,6 +36,7 @@ def run_features() -> None:
     """Merge and validate contributor exports; never calculate node scores."""
     paths = config.stage_paths()
     _require([paths["core"]], "characterise")
+    load_centrality_scores(paths["core"])
     source_paths = (
         paths["centrality"],
         paths["signed_leverage"],
@@ -35,11 +49,11 @@ def run_features() -> None:
     if paths["features"].resolve() in {path.resolve() for path in source_paths}:
         raise ValueError("Feature output must not also be a supplied input table")
     features.to_csv(paths["features"], index=False)
-    _write_json(
+    write_json(
         paths["feature_metadata"],
         {
-            "graph_sha256": _checksum(paths["core"]),
-            "features_sha256": _checksum(paths["features"]),
+            "graph_sha256": checksum(paths["core"]),
+            "features_sha256": checksum(paths["features"]),
             "columns": features.columns.tolist(),
             "sources": sources,
         },
@@ -55,6 +69,7 @@ def save_reports() -> None:
     for stage, filename in (
         ("nco", "fraction_sweep.csv"),
         ("sign-shuffle", "sign_shuffle_sweep.csv"),
+        ("ico", "intervention_sweep.csv"),
     ):
         if (paths[stage] / filename).is_file():
             _require([paths[stage] / "metadata.json"], stage)
@@ -63,10 +78,14 @@ def save_reports() -> None:
         _require([study / "simulation_metadata.json", study / "plan.json"], "node-impact")
         available.append("node-impact")
     if not available:
-        raise ValueError("No saved experiment results; run nco, sign-shuffle, or node-impact first")
+        raise ValueError(
+            "No saved experiment results; run nco, sign-shuffle, ico, or node-impact first"
+        )
     for stage in available:
         if stage == "node-impact":
             save_impact_reports(study, **config.NODE_IMPACT["analysis"])
+        elif stage == "ico":
+            save_ico_reports(paths[stage])
         else:
             save_nco_reports(paths[stage], sign_shuffle=stage == "sign-shuffle")
 
@@ -87,9 +106,12 @@ def run_stage(stage: str, **overrides) -> None:
         }
         _require([options["input_path"]], "setup")
         characterise(**options)
+    elif stage == "centrality":
+        _require([paths["core"], paths["nodes"]], "characterise")
+        save_centrality_scores(paths["core"])
     elif stage == "features":
         run_features()
-    elif stage in ("nco", "sign-shuffle"):
+    elif stage in ("nco", "sign-shuffle", "ico"):
         options = {
             "graph_path": paths["core"],
             "results_dir": paths[stage],
@@ -98,7 +120,13 @@ def run_stage(stage: str, **overrides) -> None:
         }
         options["fractions"] = tuple(options["fractions"])
         _require([options["graph_path"]], "characterise")
-        experiment = run_nco_experiment if stage == "nco" else run_sign_shuffle_experiment
+        if stage == "ico":
+            options.setdefault("budgets", tuple(config.ICO["budgets"]))
+        experiment = {
+            "nco": run_nco_experiment,
+            "sign-shuffle": run_sign_shuffle_experiment,
+            "ico": run_ico_experiment,
+        }[stage]
         experiment(**options, save_reports=False)
     elif stage == "node-impact":
         _require([paths["core"]], "characterise")

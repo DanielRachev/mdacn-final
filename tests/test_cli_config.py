@@ -11,6 +11,7 @@ from mdacn import workflow
     [
         ("nco", "run_nco_experiment"),
         ("sign-shuffle", "run_sign_shuffle_experiment"),
+        ("ico", "run_ico_experiment"),
     ],
 )
 @pytest.mark.parametrize("override", [False, True])
@@ -47,9 +48,15 @@ def test_simulation_commands_use_project_defaults_and_allow_overrides(
             "--max-steps",
             "40",
         ]
+    if command == "ico" and override:
+        args += ["--budgets", "0.0", "0.2"]
     monkeypatch.setattr("sys.argv", args)
     cli.main()
     graph, options = calls[0]
+    if command == "ico":
+        assert options.pop("budgets") == (
+            (0.0, 0.2) if override else tuple(cli.config.ICO["budgets"])
+        )
     if override:
         assert graph == Path("another.graphml")
         assert options == {
@@ -62,7 +69,7 @@ def test_simulation_commands_use_project_defaults_and_allow_overrides(
         }
     else:
         assert graph == Path("custom/processed/core.graphml")
-        suffix = "nco" if command == "nco" else "sign_shuffle"
+        suffix = "sign_shuffle" if command == "sign-shuffle" else command
         assert options == {
             "results_dir": Path("custom/results") / suffix,
             "fractions": (0.2, 0.6),

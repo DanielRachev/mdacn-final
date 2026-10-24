@@ -66,14 +66,14 @@ def test_changed_graph_is_rejected(tmp_path, saved_features):
 
 
 def test_missing_saved_score_is_rejected_without_calculating_it(tmp_path, saved_features):
-    from mdacn.impact_pipeline import _checksum
+    from mdacn.artifacts import checksum
 
     path, _ = prepare_fixture(tmp_path, saved_features)
     features = tmp_path / "features.csv"
     pd.read_csv(features).drop(columns="leverage").to_csv(features, index=False)
     metadata_path = tmp_path / "features.json"
     metadata = json.loads(metadata_path.read_text())
-    metadata["features_sha256"] = _checksum(features)
+    metadata["features_sha256"] = checksum(features)
     metadata_path.write_text(json.dumps(metadata))
     output = tmp_path / "missing-score"
     with pytest.raises(ValueError, match="Missing required node scores: leverage"):

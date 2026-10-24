@@ -87,7 +87,9 @@ def test_single_node_impacts_pair_settled_baseline_and_use_gcc(monkeypatch):
         return simulate_ico(matrix, state, **kwargs)
 
     monkeypatch.setattr(impact, "simulate_ico", capture)
-    runs = pd.DataFrame(iter_node_impacts(graph, ("b", "d"), realizations=2, max_steps=20))
+    runs = pd.DataFrame(
+        iter_node_impacts(graph, build_matrices(graph), ("b", "d"), realizations=2, max_steps=20)
+    )
     assert len(runs) == 8
     assert all(state.tolist() == [-1, -1, -1, -1] for state in starts)
     assert runs.groupby("realization").initial_seed.nunique().eq(1).all()
@@ -108,7 +110,11 @@ def test_nonsteady_baselines_are_retained_but_not_intervened(monkeypatch):
     initial = np.array([-1, -1, -1, 1, 1, 1], dtype=np.int8)
     monkeypatch.setattr(impact, "initialize_opinions", lambda *a, **k: initial.copy())
     monkeypatch.setattr(impact, "simulate_ico", lambda *a, **k: pytest.fail("Baseline cycles"))
-    runs = pd.DataFrame(iter_node_impacts(graph, (0, 3), models=("unsigned",), realizations=1))
+    runs = pd.DataFrame(
+        iter_node_impacts(
+            graph, build_matrices(graph), (0, 3), models=("unsigned",), realizations=1
+        )
+    )
     assert runs.baseline_stop_reason.eq("limit_cycle").all()
     assert runs.intervention_stop_reason.eq("not_run").all()
     assert runs.impact.isna().all()

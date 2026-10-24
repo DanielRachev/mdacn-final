@@ -24,6 +24,26 @@ SIMULATION = {
 }
 
 
+def processed_paths(processed: Path) -> dict:
+    """Define shared producer and consumer paths for one processed core."""
+    return {
+        "aggregate": processed / "aggregate.graphml",
+        "core": processed / "core.graphml",
+        "unsigned": processed / "unsigned.npz",
+        "signed": processed / "signed.npz",
+        "nodes": processed / "nodes.json",
+        "network_metadata": processed / "network_metadata.json",
+        "communities": processed / "communities.csv",
+        "centrality": processed / "centrality.csv",
+        "centrality_metadata": processed / "centrality.json",
+        "signed_leverage": processed / "signed_leverage.csv",
+        "incident_signs": processed / "incident_signs.csv",
+        "temporal_activity": processed / "temporal_activity.csv",
+        "features": processed / "node_features.csv",
+        "feature_metadata": processed / "node_features.json",
+    }
+
+
 def stage_paths() -> dict:
     """Resolve stage inputs and outputs from shared project paths."""
     processed, results = Path(PATHS["processed_dir"]), Path(PATHS["results_dir"])
@@ -31,17 +51,15 @@ def stage_paths() -> dict:
         "dataset": Path(PATHS["dataset"]),
         "processed": processed,
         "results": results,
-        "core": processed / "core.graphml",
-        "centrality": processed / "centrality.csv",
-        "signed_leverage": processed / "signed_leverage.csv",
-        "incident_signs": processed / "incident_signs.csv",
-        "temporal_activity": processed / "temporal_activity.csv",
-        "features": processed / "node_features.csv",
-        "feature_metadata": processed / "node_features.json",
+        **processed_paths(processed),
         "nco": results / "nco",
         "sign-shuffle": results / "sign_shuffle",
+        "ico": results / "ico",
         "node-impact": results / "node_impact",
     }
+
+
+ICO = {"budgets": [0.0, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25]}
 
 
 # Node-impact overrides and settings specific to that workflow.

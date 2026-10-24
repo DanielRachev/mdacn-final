@@ -1,7 +1,26 @@
 import pandas as pd
 import pytest
 
-from mdacn.impact_pipeline import _checksum, _write_json
+from mdacn.artifacts import checksum, write_json
+from mdacn.centrality import leverage_centrality
+from mdacn.data import build_matrices, save_matrices
+
+
+@pytest.fixture
+def centrality_scores():
+    def scores(graph):
+        return (
+            pd.DataFrame(
+                {
+                    "degree": dict(graph.degree()),
+                    "leverage": leverage_centrality(graph),
+                }
+            )
+            .rename_axis("node")
+            .reset_index()
+        )
+
+    return scores
 
 
 @pytest.fixture
@@ -9,6 +28,7 @@ def saved_features(tmp_path):
     """Export feature-stage inputs for small synthetic graph tests."""
 
     def save(graph, graph_path):
+        save_matrices(build_matrices(graph), graph_path)
         table = pd.DataFrame(
             {
                 "node": ["a", "b", "c", "d"],
@@ -24,11 +44,11 @@ def saved_features(tmp_path):
         path = tmp_path / "features.csv"
         metadata = tmp_path / "features.json"
         table.to_csv(path, index=False)
-        _write_json(
+        write_json(
             metadata,
             {
-                "graph_sha256": _checksum(graph_path),
-                "features_sha256": _checksum(path),
+                "graph_sha256": checksum(graph_path),
+                "features_sha256": checksum(path),
                 "columns": table.columns.tolist(),
             },
         )

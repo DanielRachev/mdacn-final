@@ -6,13 +6,15 @@ Run the entire implemented project from the repository root:
 uv run python -m mdacn run
 ```
 
-Or, after `setup` and `characterise`, run `features`, `node-impact`, then `reports`
+Or, after `setup`, `characterise`, and `centrality`, run `features`, `node-impact`, then `reports`
 using `uv run python -m mdacn <stage>`. `features` saves scores; `node-impact`
 loads them and records paired interventions; `reports` saves statistics and plots.
 Edit [config.py](../src/mdacn/config.py) for paths and settings. `stage_paths()`
 names the expected contributor CSV files under `processed_dir`:
 `centrality.csv`, `signed_leverage.csv`, `incident_signs.csv`, and
 `temporal_activity.csv`. All seven scores must cover every core node.
+`centrality` creates the first file. The remaining three require the respective
+contributor implementations. Simulations load the saved core matrices and node order.
 Reruns overwrite generated stage outputs. `features` merges and validates these
 exports; missing scores produce errors. Neither stage calculates replacements.
 

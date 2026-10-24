@@ -61,12 +61,12 @@ def project(tmp_path, monkeypatch):
     paths = config.stage_paths()
     paths["processed"].mkdir(parents=True)
     for output, columns in (
-        ("centrality", ["degree", "leverage", "betweenness"]),
         ("signed_leverage", ["signed_leverage"]),
         ("incident_signs", ["negative_incident_ratio", "signed_bridge_ratio"]),
         ("temporal_activity", ["temporal_activity"]),
     ):
         scores[["node", *columns]].to_csv(paths[output], index=False)
+    monkeypatch.setattr(config, "ICO", {"budgets": [0.0, 0.25]})
     monkeypatch.setattr(
         config,
         "NODE_IMPACT",
@@ -84,22 +84,20 @@ def project(tmp_path, monkeypatch):
 
 
 def test_full_pipeline_and_individual_stages_produce_same_saved_runs(project, monkeypatch):
-    sources = [
-        project[name]
-        for name in ("centrality", "signed_leverage", "incident_signs", "temporal_activity")
-    ]
+    sources = [project[name] for name in ("signed_leverage", "incident_signs", "temporal_activity")]
     original_files = [path.read_bytes() for path in sources]
     original_scores = pd.concat(
         [pd.read_csv(path).set_index("node") for path in sources], axis=1
     ).reset_index()
     workflow.run_project()
     pd.testing.assert_frame_equal(
-        pd.read_csv(project["features"]), original_scores, check_like=True
+        pd.read_csv(project["features"])[original_scores.columns], original_scores, check_like=True
     )
     assert project["features"].is_file() and project["feature_metadata"].is_file()
     artifacts = [
         project["nco"] / "fraction_sweep.csv",
         project["sign-shuffle"] / "sign_shuffle_sweep.csv",
+        project["ico"] / "intervention_sweep.csv",
         project["node-impact"] / "study/runs.csv",
     ]
     expected = [pd.read_csv(path) for path in artifacts]
@@ -118,6 +116,8 @@ def test_full_pipeline_and_individual_stages_produce_same_saved_runs(project, mo
         "run_nco_experiment",
         "run_sign_shuffle_experiment",
         "run_node_impact",
+        "run_ico_experiment",
+        "save_centrality_scores",
         "validate_features",
     ):
         monkeypatch.setattr(
@@ -140,10 +140,11 @@ def test_missing_stage_input_has_actionable_error(project):
 
 def test_missing_contributor_scores_error_and_preserve_saved_exports(project):
     workflow.run_stage("characterise")
+    workflow.run_stage("centrality")
     workflow.run_stage("features")
     before = project["features"].read_bytes()
     project["centrality"].unlink()
-    with pytest.raises(ValueError, match="Missing inputs: .*centrality.csv"):
+    with pytest.raises(ValueError, match="Missing centrality input: .*centrality.csv"):
         workflow.run_stage("features")
     assert project["features"].read_bytes() == before
 
@@ -161,6 +162,7 @@ def test_analysis_accepts_a_single_completed_experiment_branch(project, monkeypa
 
 def test_stale_features_are_rejected(project, monkeypatch):
     workflow.run_stage("characterise")
+    workflow.run_stage("centrality")
     workflow.run_stage("features")
     core = project["core"]
     core.write_bytes(core.read_bytes() + b"\n")
@@ -173,6 +175,7 @@ def test_stale_features_are_rejected(project, monkeypatch):
 
 def test_feature_table_tampering_is_rejected(project):
     workflow.run_stage("characterise")
+    workflow.run_stage("centrality")
     workflow.run_stage("features")
     with project["features"].open("a") as file:
         file.write("\n")
@@ -188,3 +191,84 @@ def test_cli_run_dispatches_entire_pipeline(monkeypatch):
     monkeypatch.setattr("sys.argv", ["mdacn", "run"])
     cli.main()
     assert calls == ["run"]
+
+
+def test_consumers_reuse_exported_matrices_and_centrality(project, monkeypatch):
+    import mdacn.centrality_pipeline as centrality
+    import mdacn.data as data
+
+    workflow.run_stage("characterise")
+    workflow.run_stage("centrality")
+    workflow.run_stage("features")
+    source = project["centrality"].read_bytes()
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Consumers must load saved outputs")
+
+    monkeypatch.setattr(data, "build_matrices", forbidden)
+    for name in (
+        "degree_centrality",
+        "betweenness_centrality",
+        "eigenvector_centrality",
+        "leverage_centrality",
+    ):
+        monkeypatch.setattr(centrality, name, forbidden)
+    for stage in ("nco", "sign-shuffle", "ico", "node-impact"):
+        workflow.run_stage(stage)
+    assert project["centrality"].read_bytes() == source
+
+
+@pytest.mark.parametrize("name", ["unsigned", "signed", "nodes", "network_metadata"])
+def test_missing_matrices_error_without_rebuilding(project, monkeypatch, name):
+    import mdacn.data as data
+
+    workflow.run_stage("characterise")
+    project[name].unlink()
+    monkeypatch.setattr(data, "build_matrices", lambda *a: pytest.fail("No fallback"))
+    with pytest.raises(ValueError, match="Run characterise first"):
+        workflow.run_stage("nco")
+    assert not project["nco"].exists()
+
+
+@pytest.mark.parametrize("name", ["unsigned", "signed", "nodes"])
+def test_changed_matrix_artifact_is_rejected(project, name):
+    workflow.run_stage("characterise")
+    with project[name].open("ab") as file:
+        file.write(b"changed")
+    with pytest.raises(ValueError, match=f"Saved {name} changed"):
+        workflow.run_stage("nco")
+    assert not project["nco"].exists()
+
+
+def test_changed_centrality_is_rejected(project):
+    workflow.run_stage("characterise")
+    workflow.run_stage("centrality")
+    with project["centrality"].open("a") as file:
+        file.write("\n")
+    with pytest.raises(ValueError, match="Centrality table changed"):
+        workflow.run_stage("features")
+    assert not project["features"].exists()
+
+
+def test_ico_sweeps_saved_inputs_and_reports_without_simulation(project, monkeypatch):
+    workflow.run_stage("characterise")
+    workflow.run_stage("centrality")
+    scores = pd.read_csv(project["centrality"])
+    assert scores.node.tolist() == [f"n{i}" for i in range(6)]
+    assert scores.degree.tolist() == [1, 2, 2, 2, 2, 1]
+    assert scores.degree_centrality.tolist() == pytest.approx([0.2, 0.4, 0.4, 0.4, 0.4, 0.2])
+    assert {"betweenness", "eigenvector", "leverage"} <= set(scores)
+    workflow.run_stage("ico", fractions=[0.0, 1.0])
+    path = project["ico"] / "intervention_sweep.csv"
+    before = path.read_bytes()
+    outcomes = pd.read_csv(path)
+    assert len(outcomes) == 2 * 2 * 2 * 3
+    assert set(outcomes.f) == {0.0, 1.0}
+    assert not (project["ico"] / "intervention_summary.csv").exists()
+    monkeypatch.setattr(workflow, "run_ico_experiment", lambda *a, **k: pytest.fail("No rerun"))
+    workflow.run_stage("reports")
+    assert path.read_bytes() == before
+    summary = pd.read_csv(project["ico"] / "intervention_summary.csv")
+    assert summary.runs.sum() == len(outcomes)
+    assert (project["ico"] / "intervention_comparison_f0.png").is_file()
+    assert (project["ico"] / "intervention_comparison_f1.png").is_file()

@@ -1,7 +1,6 @@
 """Reusable preparation, simulation, and analysis stages for node-impact studies."""
 
 import csv
-import hashlib
 import json
 from importlib.metadata import version
 from pathlib import Path
@@ -9,7 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from mdacn.data import load_graph
+from mdacn.artifacts import checksum, write_json
+from mdacn.data import load_graph, load_matrices
 from mdacn.features import PREDICTORS, validate_features
 from mdacn.impact import (
     iter_node_impacts,
@@ -20,22 +20,13 @@ from mdacn.impact_analysis import calculate_impact_statistics
 from mdacn.impact_plots import save_impact_plots
 
 
-def _checksum(path: Path) -> str:
-    with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
-
-
-def _write_json(path: Path, value: dict) -> None:
-    path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-
-
 def _provenance() -> dict:
     package = Path(__file__).parent
     return {
         "versions": {
             name: version(name) for name in ("mdacn-final", "networkx", "numpy", "scipy", "pandas")
         },
-        "source_sha256": {path.name: _checksum(path) for path in sorted(package.glob("*.py"))},
+        "source_sha256": {path.name: checksum(path) for path in sorted(package.glob("*.py"))},
     }
 
 
@@ -53,7 +44,7 @@ def _read_features(paths: tuple[Path, ...]) -> tuple[pd.DataFrame | None, list[d
             if overlap:
                 raise ValueError(f"Overlapping feature columns: {sorted(overlap)}")
             merged = merged.merge(table, on="node", how="outer", validate="one_to_one")
-        sources.append({"path": str(path.resolve()), "sha256": _checksum(path)})
+        sources.append({"path": str(path.resolve()), "sha256": checksum(path)})
     return merged, sources
 
 
@@ -79,9 +70,9 @@ def prepare_impact_study(
         raise ValueError("Use a new or empty results directory to preserve the declared study")
     graph = load_graph(graph_path)
     metadata = json.loads(feature_metadata_path.read_text(encoding="utf-8"))
-    if metadata["graph_sha256"] != _checksum(graph_path):
+    if metadata["graph_sha256"] != checksum(graph_path):
         raise ValueError("Core changed since features were computed; run features again")
-    if metadata["features_sha256"] != _checksum(features_path):
+    if metadata["features_sha256"] != checksum(features_path):
         raise ValueError("Feature table changed; run features again")
     features, sources = _read_features((features_path,))
     if set(features.node) != set(graph):
@@ -96,7 +87,7 @@ def prepare_impact_study(
     plan = {
         "schema_version": 1,
         "graph_path": str(graph_path.resolve()),
-        "graph_sha256": _checksum(graph_path),
+        "graph_sha256": checksum(graph_path),
         "graph_metadata": graph.graph,
         "n_nodes": graph.number_of_nodes(),
         "n_edges": graph.number_of_edges(),
@@ -106,13 +97,13 @@ def prepare_impact_study(
         "sample_seed": sample_seed,
         "sample_nodes": sample.node.tolist(),
         "frozen_files": {
-            f"{name}.csv": _checksum(results_dir / f"{name}.csv")
+            f"{name}.csv": checksum(results_dir / f"{name}.csv")
             for name in ("features", "sample", "sample_coverage")
         },
         "feature_sources": sources,
         "feature_metadata": {
             "path": str(feature_metadata_path.resolve()),
-            "sha256": _checksum(feature_metadata_path),
+            "sha256": checksum(feature_metadata_path),
         },
         "feature_columns": features.columns.tolist(),
         "fractions": fractions,
@@ -122,7 +113,7 @@ def prepare_impact_study(
         "max_steps": max_steps,
         **_provenance(),
     }
-    _write_json(results_dir / "plan.json", plan)
+    write_json(results_dir / "plan.json", plan)
     print(f"Prepared {sample_size} nodes in {len(coverage)} strata: {results_dir}")
     return plan
 
@@ -131,8 +122,8 @@ def _load_plan(results_dir: Path) -> dict:
     plan = json.loads((results_dir / "plan.json").read_text(encoding="utf-8"))
     if plan["schema_version"] != 1:
         raise ValueError("Unsupported impact plan version")
-    for filename, checksum in plan["frozen_files"].items():
-        if _checksum(results_dir / filename) != checksum:
+    for filename, expected_checksum in plan["frozen_files"].items():
+        if checksum(results_dir / filename) != expected_checksum:
             raise ValueError(f"Frozen input changed: {filename}; prepare a new study")
     return plan
 
@@ -141,7 +132,7 @@ def simulate_impact_study(results_dir: Path) -> None:
     """Run only the previously declared sample/settings; never silently replace results."""
     plan = _load_plan(results_dir)
     graph_path = Path(plan["graph_path"])
-    if _checksum(graph_path) != plan["graph_sha256"]:
+    if checksum(graph_path) != plan["graph_sha256"]:
         raise ValueError("Core graph changed since preparation; prepare a new study")
     output = results_dir / "runs.csv"
     partial = results_dir / "runs.partial.csv"
@@ -150,11 +141,13 @@ def simulate_impact_study(results_dir: Path) -> None:
     graph = load_graph(graph_path)
     if sorted(graph) != plan["nodes"]:
         raise ValueError("Core node order changed")
-    metadata = {"plan_sha256": _checksum(results_dir / "plan.json"), **_provenance()}
+    network = load_matrices(graph_path)
+    metadata = {"plan_sha256": checksum(results_dir / "plan.json"), **_provenance()}
     with partial.open("w", newline="", encoding="utf-8") as destination:
         writer = None
         for row in iter_node_impacts(
             graph,
+            network,
             tuple(plan["sample_nodes"]),
             fractions=tuple(plan["fractions"]),
             models=tuple(plan["models"]),
@@ -169,8 +162,8 @@ def simulate_impact_study(results_dir: Path) -> None:
             writer.writerow(row)
             destination.flush()
     partial.rename(output)
-    metadata["runs_sha256"] = _checksum(output)
-    _write_json(results_dir / "simulation_metadata.json", metadata)
+    metadata["runs_sha256"] = checksum(output)
+    write_json(results_dir / "simulation_metadata.json", metadata)
     print(f"Saved paired outcomes: {output}")
 
 
@@ -183,9 +176,9 @@ def save_impact_reports(
     """Calculate impact statistics and save tables, metadata, and plots."""
     plan = _load_plan(results_dir)
     metadata = json.loads((results_dir / "simulation_metadata.json").read_text(encoding="utf-8"))
-    if metadata["plan_sha256"] != _checksum(results_dir / "plan.json"):
+    if metadata["plan_sha256"] != checksum(results_dir / "plan.json"):
         raise ValueError("Plan changed after simulation")
-    if metadata["runs_sha256"] != _checksum(results_dir / "runs.csv"):
+    if metadata["runs_sha256"] != checksum(results_dir / "runs.csv"):
         raise ValueError("Simulation output changed")
     sample = pd.read_csv(
         results_dir / "sample.csv", dtype={"node": str}, keep_default_na=False, na_values=[""]
@@ -203,7 +196,7 @@ def save_impact_reports(
     output.mkdir(exist_ok=True)
     for name, table in tables.items():
         table.to_csv(output / f"{name}.csv", index=False)
-    _write_json(
+    write_json(
         output / "metadata.json",
         {
             "plan_sha256": metadata["plan_sha256"],
