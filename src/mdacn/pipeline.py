@@ -27,7 +27,7 @@ from mdacn.data import (
     largest_component,
     load_interactions,
 )
-from mdacn.plots import plot_degree_distribution
+from mdacn.plots import plot_core_communities, plot_degree_comparison, plot_degree_distribution
 
 
 def _graph_summary(graph: nx.Graph) -> dict[str, int | float | None]:
@@ -53,7 +53,7 @@ def characterise(
     min_interactions: int = 100,
     seed: int = 42,
     processed_dir: Path = Path("data/processed"),
-    results_dir: Path = Path("results"),
+    results_dir: Path = Path("results/topology"),
 ) -> dict[str, object]:
     """Save the aggregate/core graphs, aligned core matrices, metrics, and plots
 
@@ -107,6 +107,9 @@ def characterise(
 
     distribution = degree_distribution(core)
     fits = fit_degree_baselines(core)
+    degree_distribution(graph).to_csv(
+        results_dir / "aggregate_degree_distribution.csv", index=False
+    )
     distribution.to_csv(results_dir / "degree_distribution.csv", index=False)
     fits.to_csv(results_dir / "degree_fits.csv", index=False)
 
@@ -116,6 +119,17 @@ def characterise(
         **community_metrics(core, communities),
         **spectral_metrics(network.unsigned),
     }
+
+    print("Computing the full-core unsigned layout...", flush=True)
+    positions = nx.spring_layout(core, seed=seed, weight=None, iterations=100, method="force")
+    pd.DataFrame(
+        {
+            "node": network.nodes,
+            "x": [positions[node][0] for node in network.nodes],
+            "y": [positions[node][1] for node in network.nodes],
+            "community": [communities[node] for node in network.nodes],
+        }
+    ).to_csv(results_dir / "core_layout.csv", index=False)
 
     summary: dict[str, object] = {
         "input": {
@@ -141,10 +155,21 @@ def characterise(
             name: value if math.isfinite(value) else None for name, value in metrics.items()
         },
         "degree_fit_method": "Discrete MLE on k>= smallest positive core degree; no bootstrap",
+        "layout": {
+            "method": "Unsigned spring layout; force method",
+            "iterations": 100,
+            "seed": seed,
+            "weight": None,
+            "nodes": len(core),
+        },
     }
 
     (results_dir / "metrics.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
-    plot_degree_distribution(distribution, fits, results_dir / "degree_distribution.pdf")
-    plot_degree_distribution(distribution, fits, results_dir / "degree_distribution.png")
+    for extension in ("png", "pdf"):
+        plot_degree_distribution(
+            distribution, fits, results_dir / f"degree_distribution.{extension}"
+        )
+        plot_degree_comparison(graph, core, results_dir / f"degree_comparison.{extension}")
+        plot_core_communities(core, positions, results_dir / f"core_communities.{extension}")
     print(f"Saved graphs and matrices to {processed_dir}, and metrics and plots to {results_dir}")
     return summary
