@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mdacn.data import aggregate_edges, build_matrices, export_graph
+from mdacn.data import aggregate_edges, build_matrices, export_graph, save_matrices
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.experiments import (
     run_fraction_sweep,
@@ -77,6 +77,7 @@ def test_nco_pipeline_and_cli(tmp_path):
     )
     path = tmp_path / "core.graphml"
     export_graph(graph, path)
+    save_matrices(build_matrices(graph), path)
     output = tmp_path / "nco"
     results = run_nco_experiment(path, results_dir=output, realizations=2, max_steps=10)
     metadata = json.loads((output / "metadata.json").read_text())
@@ -135,6 +136,7 @@ def test_sign_shuffle_pipeline_and_cli(tmp_path):
     )
     path = tmp_path / "core.graphml"
     export_graph(graph, path)
+    save_matrices(build_matrices(graph), path)
     output = tmp_path / "sign_shuffle"
     results = run_sign_shuffle_experiment(
         path, results_dir=output, fractions=(0.2, 0.8), realizations=1, seed=7, max_steps=10
@@ -234,6 +236,7 @@ def test_plot_intervention_comparison_summarises_strategy_curves(tmp_path, monke
 def test_sign_shuffle_rejects_empty_graph(tmp_path):
     path = tmp_path / "empty.graphml"
     export_graph(nx.Graph(), path)
+    save_matrices(build_matrices(nx.Graph()), path)
     output = tmp_path / "sign_shuffle"
 
     with pytest.raises(ValueError, match="at least one node"):
@@ -275,8 +278,10 @@ def test_sign_shuffle_fraction_sweep_is_reproducible_and_plots(tmp_path):
         graph[u][v]["sign"] = sign
 
     kwargs = dict(fractions=(0.2, 0.8), realizations=2, seed=11, max_steps=10)
-    results = run_sign_shuffle_fraction_sweep(graph, **kwargs)
-    pd.testing.assert_frame_equal(results, run_sign_shuffle_fraction_sweep(graph, **kwargs))
+    results = run_sign_shuffle_fraction_sweep(graph, build_matrices(graph), **kwargs)
+    pd.testing.assert_frame_equal(
+        results, run_sign_shuffle_fraction_sweep(graph, build_matrices(graph), **kwargs)
+    )
     assert set(results["model"]) == {"empirical", "sign_shuffled"}
     assert len(results) == 8
     assert (results["n_nodes"] == 4).all()
@@ -298,7 +303,7 @@ def test_sign_shuffle_fraction_sweep_matches_graph_replay(signs):
         graph[u][v]["sign"] = sign
     network = build_matrices(graph)
     results = run_sign_shuffle_fraction_sweep(
-        graph, fractions=(0, 0.4, 1), realizations=2, seed=7, max_steps=10
+        graph, network, fractions=(0, 0.4, 1), realizations=2, seed=7, max_steps=10
     )
 
     for row in results.itertuples(index=False):
@@ -316,15 +321,17 @@ def test_sign_shuffle_fraction_sweep_matches_graph_replay(signs):
             assert row.cycle_length == replay.cycle_length
 
 
-def test_intervention_sweep_plots_without_extra_columns(tmp_path):
+def test_intervention_sweep_plots_without_extra_columns(tmp_path, centrality_scores):
     import matplotlib.pyplot as plt
 
     graph = nx.path_graph(["a", "b", "c", "d"])
     nx.set_edge_attributes(graph, 1, "sign")
     network = build_matrices(graph)
     kwargs = dict(budgets=(0, 0.25, 1), initial_negative_fraction=0.75, realizations=2, seed=3)
-    results = run_intervention_sweep(graph, network, **kwargs)
-    pd.testing.assert_frame_equal(results, run_intervention_sweep(graph, network, **kwargs))
+    results = run_intervention_sweep(graph, network, scores=centrality_scores(graph), **kwargs)
+    pd.testing.assert_frame_equal(
+        results, run_intervention_sweep(graph, network, scores=centrality_scores(graph), **kwargs)
+    )
     assert (results["n_nodes"] == 4).all()
     assert (results.loc[results["budget"] == 1, "cluster_size"] == 0).all()
     path = tmp_path / "intervention.png"

@@ -7,11 +7,8 @@ from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
 from mdacn.contracts import NetworkMatrices
-from mdacn.data import build_matrices
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.interventions import (
-    _degree_scores,
-    _leverage_scores,
     opposing_cluster_size,
     select_contrarians,
     simulate_ico,
@@ -103,6 +100,7 @@ def run_intervention_sweep(
     *,
     budgets: tuple[float, ...],
     initial_negative_fraction: float,
+    scores: pd.DataFrame,
     realizations: int = 20,
     seed: int = 0,
     max_steps: int = 1000,
@@ -125,8 +123,19 @@ def run_intervention_sweep(
     if len(network.nodes) != len(set(network.nodes)):
         raise ValueError("network nodes must be unique")
 
-    degree_scores = _degree_scores(graph)
-    leverage_scores = _leverage_scores(graph)
+    if (
+        "node" not in scores
+        or scores.node.duplicated().any()
+        or set(scores.node) != set(network.nodes)
+    ):
+        raise ValueError("Centrality scores must cover the network nodes exactly once")
+    if not {"degree", "leverage"} <= set(scores):
+        raise ValueError("Missing degree or leverage scores; run centrality first")
+    aligned = scores.set_index("node").reindex(network.nodes)
+    if not np.isfinite(aligned[["degree", "leverage"]].to_numpy(float)).all():
+        raise ValueError("Centrality scores must be finite")
+    degree_scores = aligned.degree.to_dict()
+    leverage_scores = aligned.leverage.to_dict()
     strategies = ("random", "degree", "leverage")
     seeds = np.random.SeedSequence(seed).spawn(len(budgets) * realizations)
 
@@ -189,6 +198,7 @@ def run_intervention_sweep(
 
 def run_sign_shuffle_fraction_sweep(
     graph: nx.Graph,
+    network: NetworkMatrices,
     *,
     fractions: tuple[float, ...] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
     realizations: int = 20,
@@ -209,7 +219,9 @@ def run_sign_shuffle_fraction_sweep(
     if len(set(fractions)) != len(fractions):
         raise ValueError("fractions must be unique")
 
-    empirical = build_matrices(graph)
+    empirical = network
+    if empirical.nodes != tuple(sorted(graph)):
+        raise ValueError("Saved matrices must use the core node order")
     n_nodes = len(empirical.nodes)
     if not n_nodes:
         raise ValueError("graph must have at least one node")
