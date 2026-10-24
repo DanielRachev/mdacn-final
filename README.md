@@ -9,18 +9,39 @@ Requires Python 3.12+ and uv. Run from this directory:
 
 ```bash
 uv sync --locked
+uv run python -m mdacn run
+```
+
+Or run each stage separately. Config supplies all input and output paths:
+
+```bash
 uv run python -m mdacn setup
-uv run python -m mdacn characterise --k 10 --seed 0
-uv run python -m mdacn nco --realizations 20 --seed 0 --max-steps 1000
-uv run python -m mdacn sign-shuffle --realizations 20 --seed 0 --max-steps 1000
+uv run python -m mdacn characterise
+uv run python -m mdacn features
+uv run python -m mdacn nco
+uv run python -m mdacn sign-shuffle
+uv run python -m mdacn node-impact
+uv run python -m mdacn reports
 ```
 
 | Command | Action |
 | --- | --- |
+| `run` | Run all implemented stages in the order shown above. |
 | `setup` | Download the body TSV; reuse an existing file. |
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
-| `nco` | Compare unsigned and signed dynamics on the exported core. |
-| `sign-shuffle` | Compare empirical signed dynamics with shuffled edge signs on the same core. |
+| `features` | Read expected contributor output files, then merge and validate their scores. |
+| `nco` | Save unsigned and signed simulation outcomes on the exported core. |
+| `sign-shuffle` | Save paired empirical/sign-shuffled simulation outcomes. |
+| `node-impact` | Calculate sample size, load saved scores, and save paired single-node intervention outcomes. |
+| `reports` | Save summaries, impact statistics, and plots from stored experiment results. |
+
+Stages overwrite their generated outputs. Missing prerequisites produce an error
+naming the stage to run first. After changing the core, rerun `features` before
+`node-impact`. `reports` can be rerun independently and uses saved experiment
+settings for summaries and current analysis settings for bootstrap calculations.
+
+Phase 2 node-impact commands, input tables, and output interpretation:
+[Node-impact guide](docs/node_impact.md).
 
 Alternative core: filter by original incident interaction count, then keep the
 largest connected component.
@@ -30,6 +51,24 @@ uv run python -m mdacn characterise --core-method activity_lcc --min-interaction
 ```
 
 Use each command's `--help` for input paths, output paths, and experiment options.
+Shared paths, core extraction settings, and simulation defaults live in
+[config.py](src/mdacn/config.py). Command-line options override these defaults;
+`NODE_IMPACT` contains the node-impact workflow's overrides.
+Contributor filenames are defined in `stage_paths()` in `config.py`,
+relative to `PATHS["processed_dir"]`. The default files and required columns are:
+
+| File | Columns |
+| --- | --- |
+| `centrality.csv` | `node`, raw-count `degree`, `leverage`, `betweenness` |
+| `signed_leverage.csv` | `node`, `signed_leverage` |
+| `incident_signs.csv` | `node`, `negative_incident_ratio`, `signed_bridge_ratio` |
+| `temporal_activity.csv` | `node`, `temporal_activity` |
+
+All seven scores are required for every core node.
+The `features` stage writes the shared score table consumed by `node-impact`.
+Scores are kept unchanged. Missing or invalid required scores produce an error;
+neither `features` nor `node-impact` calculates replacements. Contributor score
+exports are prerequisites until their producing stages are connected to `run`.
 
 `sign-shuffle` shows a progress bar with elapsed time and ETA. Each step completes
 one empirical/shuffled pair. The sweep reuses the core topology to avoid copying
@@ -57,10 +96,12 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 | `data/processed/aggregate.graphml`, `core.graphml` | Graphs with interaction counts and edge signs; core includes community labels. |
 | `data/processed/unsigned.npz`, `signed.npz`, `nodes.json` | Aligned core matrices and node order. |
 | `data/processed/communities.csv` | Node community labels. |
+| `data/processed/node_features.csv`, `node_features.json` | Node scores and graph/input checksums for reuse by later stages. |
 | `results/metrics.json` | Network metrics and input metadata. |
 | `results/degree_distribution.csv`, `degree_fits.csv`, `degree_distribution.pdf` | Degree distribution, fits, and figure. |
 | `results/nco/` | Simulation results, summaries, figures, and metadata. |
 | `results/sign_shuffle/` | Sign-shuffle results, summaries, PNG/PDF figures, metadata, and node order. |
+| `results/node_impact/` | Run config and `study/` containing the sample, paired outcomes, and `analysis/`. |
 
 Generated files are ignored by Git. Reruns replace outputs in the selected
 directories. Rerun preprocessing after changing data rules.

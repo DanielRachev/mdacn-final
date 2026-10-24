@@ -20,6 +20,7 @@ def run_nco_experiment(
     realizations: int = 20,
     seed: int = 0,
     max_steps: int = 1000,
+    save_reports: bool = True,
 ) -> pd.DataFrame:
     """Run on preprocessed graph signs and save outcomes, provenance, and figures."""
     graph = load_graph(graph_path)
@@ -30,15 +31,7 @@ def run_nco_experiment(
     )
     results_dir.mkdir(parents=True, exist_ok=True)
     results.to_csv(results_dir / "fraction_sweep.csv", index=False)
-    summary = results.groupby(["model", "f", "stop_reason"], as_index=False).agg(
-        runs=("realization", "size"),
-        mean_initial_negative_fraction=("initial_negative_fraction", "mean"),
-        mean_final_negative_fraction=("final_negative_fraction", "mean"),
-        std_final_negative_fraction=("final_negative_fraction", "std"),
-        mean_steps=("steps", "mean"),
-    )
-    summary["run_fraction"] = summary["runs"] / realizations
-    summary.to_csv(results_dir / "fraction_summary.csv", index=False)
+    _clear_reports(results_dir, "fraction_summary", "phase_transition")
     with graph_path.open("rb") as source:
         checksum = hashlib.file_digest(source, "sha256").hexdigest()
     metadata = {
@@ -53,19 +46,14 @@ def run_nco_experiment(
         "realizations": realizations,
         "seed": seed,
         "max_steps": max_steps,
-        "initialization": "Uniform sampling without replacement; nearest count, halves up",
-        "opinion_ties": "Keep current state",
-        "interaction_ties": "W=0; retain unsigned edge",
-        "s1_definition": "Steady negative node fraction, not largest cluster fraction",
-        "nonsteady_outcomes": "Terminal phase/state only; not an equilibrium estimate",
         "versions": {name: version(name) for name in ("mdacn-final", "numpy", "scipy", "pandas")},
     }
     (results_dir / "metadata.json").write_text(
         json.dumps(metadata, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
     (results_dir / "nodes.json").write_text(json.dumps(network.nodes) + "\n", encoding="utf-8")
-    for extension in ("png", "pdf"):
-        plot_phase_transition(results, results_dir / f"phase_transition.{extension}")
+    if save_reports:
+        save_nco_reports(results_dir)
     print(results.groupby(["model", "stop_reason"]).size().to_string(), flush=True)
     print(f"Saved NCO results to {results_dir}", flush=True)
     return results
@@ -79,6 +67,7 @@ def run_sign_shuffle_experiment(
     realizations: int = 20,
     seed: int = 0,
     max_steps: int = 1000,
+    save_reports: bool = True,
 ) -> pd.DataFrame:
     """Run the empirical-vs-sign-shuffled null model comparison and save outputs."""
     graph = load_graph(graph_path)
@@ -96,15 +85,7 @@ def run_sign_shuffle_experiment(
     )
     results_dir.mkdir(parents=True, exist_ok=True)
     results.to_csv(results_dir / "sign_shuffle_sweep.csv", index=False)
-    summary = results.groupby(["model", "f", "stop_reason"], as_index=False).agg(
-        runs=("realization", "size"),
-        mean_initial_negative_fraction=("initial_negative_fraction", "mean"),
-        mean_final_negative_fraction=("final_negative_fraction", "mean"),
-        std_final_negative_fraction=("final_negative_fraction", "std"),
-        mean_steps=("steps", "mean"),
-    )
-    summary["run_fraction"] = summary["runs"] / realizations
-    summary.to_csv(results_dir / "sign_shuffle_summary.csv", index=False)
+    _clear_reports(results_dir, "sign_shuffle_summary", "sign_shuffle_phase_transition")
     with graph_path.open("rb") as source:
         checksum = hashlib.file_digest(source, "sha256").hexdigest()
     metadata = {
@@ -120,11 +101,6 @@ def run_sign_shuffle_experiment(
         "seed": seed,
         "max_steps": max_steps,
         "null_model": "sign_shuffling",
-        "initialization": "Uniform sampling without replacement; nearest count, halves up",
-        "opinion_ties": "Keep current state",
-        "interaction_ties": "W=0; retain unsigned edge",
-        "s1_definition": "Steady negative node fraction, not largest cluster fraction",
-        "nonsteady_outcomes": "Terminal phase/state only; not an equilibrium estimate",
         "versions": {name: version(name) for name in ("mdacn-final", "numpy", "scipy", "pandas")},
     }
     (results_dir / "metadata.json").write_text(
@@ -133,10 +109,34 @@ def run_sign_shuffle_experiment(
     (results_dir / "nodes.json").write_text(
         json.dumps(tuple(sorted(graph))) + "\n", encoding="utf-8"
     )
-    for extension in ("png", "pdf"):
-        plot_sign_shuffle_phase_transition(
-            results, results_dir / f"sign_shuffle_phase_transition.{extension}"
-        )
+    if save_reports:
+        save_nco_reports(results_dir, sign_shuffle=True)
     print(results.groupby(["model", "stop_reason"]).size().to_string(), flush=True)
     print(f"Saved sign-shuffle results to {results_dir}", flush=True)
     return results
+
+
+def _clear_reports(results_dir: Path, summary: str, figure: str) -> None:
+    for name in (f"{summary}.csv", f"{figure}.png", f"{figure}.pdf"):
+        (results_dir / name).unlink(missing_ok=True)
+
+
+def save_nco_reports(results_dir: Path, *, sign_shuffle: bool = False) -> None:
+    """Save summary tables and figures derived from stored NCO runs."""
+    sweep = "sign_shuffle_sweep" if sign_shuffle else "fraction_sweep"
+    summary_name = "sign_shuffle_summary" if sign_shuffle else "fraction_summary"
+    figure = "sign_shuffle_phase_transition" if sign_shuffle else "phase_transition"
+    results = pd.read_csv(results_dir / f"{sweep}.csv")
+    metadata = json.loads((results_dir / "metadata.json").read_text(encoding="utf-8"))
+    summary = results.groupby(["model", "f", "stop_reason"], as_index=False).agg(
+        runs=("realization", "size"),
+        mean_initial_negative_fraction=("initial_negative_fraction", "mean"),
+        mean_final_negative_fraction=("final_negative_fraction", "mean"),
+        std_final_negative_fraction=("final_negative_fraction", "std"),
+        mean_steps=("steps", "mean"),
+    )
+    summary["run_fraction"] = summary["runs"] / metadata["realizations"]
+    summary.to_csv(results_dir / f"{summary_name}.csv", index=False)
+    plot = plot_sign_shuffle_phase_transition if sign_shuffle else plot_phase_transition
+    for extension in ("png", "pdf"):
+        plot(results, results_dir / f"{figure}.{extension}")

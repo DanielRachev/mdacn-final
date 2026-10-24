@@ -140,7 +140,6 @@ def characterise(
         "metrics": {
             name: value if math.isfinite(value) else None for name, value in metrics.items()
         },
-        "degree_fit_method": "Discrete MLE on k>= smallest positive core degree; no bootstrap",
     }
 
     (results_dir / "metrics.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
