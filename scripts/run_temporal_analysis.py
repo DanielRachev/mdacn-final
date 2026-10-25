@@ -8,10 +8,10 @@ from mdacn.data import load_interactions
 from mdacn.temporal_analysis import (
     compare_temporal_trajectories,
     filter_core_events,
+    plot_minority_trajectories,
     plot_resolution_ablation,
     plot_temporal_activity,
     plot_temporal_trajectories,
-    plot_minority_trajectories,
     resolution_ablation,
     sign_transitions,
     temporal_activity,

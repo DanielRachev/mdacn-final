@@ -15,6 +15,7 @@ import pytest
 
 from mdacn.data import aggregate_edges, build_matrices, export_graph
 from mdacn.dynamics import initialize_opinions, simulate_nco
+from mdacn.evaluation import compute_opinion_components, compute_opinion_gcc
 from mdacn.experiments import (
     run_fraction_sweep,
     run_intervention_sweep,
@@ -24,6 +25,7 @@ from mdacn.experiments import (
 from mdacn.nco_pipeline import run_nco_experiment, run_sign_shuffle_experiment
 from mdacn.plots import (
     plot_intervention_comparison,
+    plot_opinion_gcc,
     plot_phase_transition,
     plot_sign_shuffle_phase_transition,
 )
@@ -46,6 +48,8 @@ def test_paired_sweep_reproducibility_and_replay():
         replay = simulate_nco(network.unsigned, initial, model=row.model, max_steps=20)
         assert row.initial_negative_fraction == np.mean(initial == -1)
         assert row.final_negative_fraction == np.mean(replay.final_state == -1)
+        gcc = compute_opinion_gcc(graph, replay.final_state, nodes=network.nodes)
+        assert (row.g_minus, row.g_plus) == (gcc["g_minus"], gcc["g_plus"])
 
 
 def test_signed_divergence_and_nonsteady_statuses():
@@ -85,12 +89,16 @@ def test_nco_pipeline_and_cli(tmp_path):
     assert metadata["n_nodes"] == 3
     assert len(metadata["graph_sha256"]) == 64
     assert json.loads((output / "nodes.json").read_text()) == ["a", "b", "c"]
-    assert len(pd.read_csv(output / "fraction_sweep.csv")) == len(results) == 36
+    assert len(pd.read_csv(output / "fraction_sweep.csv")) == len(results) == 200
     summary = pd.read_csv(output / "fraction_summary.csv")
-    assert summary["runs"].sum() == 36
+    assert summary["runs"].sum() == 200
     assert (summary.groupby(["model", "f"])["run_fraction"].sum() == 1).all()
+    assert set(summary) >= {"mean_g_minus", "std_g_minus", "mean_g_plus", "std_g_plus"}
+    assert set(summary) >= {"mean_g_minus_second", "mean_g_plus_second"}
     for extension in ("png", "pdf"):
         assert (output / f"phase_transition.{extension}").stat().st_size > 1000
+        assert (output / f"opinion_gcc_phase_transition.{extension}").stat().st_size > 1000
+        assert (output / f"positive_opinion_gcc_phase_transition.{extension}").stat().st_size > 1000
     completed = subprocess.run(
         [
             sys.executable,
@@ -145,8 +153,23 @@ def test_sign_shuffle_pipeline_and_cli(tmp_path):
     assert len(pd.read_csv(output / "sign_shuffle_sweep.csv")) == len(results) == 4
     summary = pd.read_csv(output / "sign_shuffle_summary.csv")
     assert summary["runs"].sum() == 4
-    assert (output / "sign_shuffle_phase_transition.png").stat().st_size > 1000
-    assert (output / "sign_shuffle_phase_transition.pdf").stat().st_size > 1000
+    assert set(summary) >= {
+        "mean_g_minus",
+        "std_g_minus",
+        "mean_g_plus",
+        "std_g_plus",
+        "mean_g_minus_second",
+        "std_g_minus_second",
+        "mean_g_plus_second",
+        "std_g_plus_second",
+    }
+    for extension in ("png", "pdf"):
+        for figure in (
+            "sign_shuffle_phase_transition",
+            "opinion_gcc_phase_transition",
+            "positive_opinion_gcc_phase_transition",
+        ):
+            assert (output / f"{figure}.{extension}").stat().st_size > 1000
     completed = subprocess.run(
         [
             sys.executable,
@@ -195,10 +218,36 @@ def test_plot_separates_stop_statuses(tmp_path, monkeypatch):
             "f": [0.5] * 3,
             "stop_reason": ["steady_state", "limit_cycle", "max_steps"],
             "final_negative_fraction": [0.1, 0.8, 0.4],
+            "g_minus": [0.05, 0.7, 0.3],
+            "g_plus": [0.85, 0.1, 0.2],
+            "g_minus_second": [0.01, 0.02, 0.005],
+            "g_plus_second": [0.01, 0.02, 0.01],
+            "n_nodes": [100] * 3,
         }
     )
     plot_phase_transition(results, tmp_path / "statuses.png")
     assert calls == [[0.1], [0.8], [0.4]]
+    component_calls = []
+    original_plot = Axes.plot
+
+    def capture_components(self, x, y, **kwargs):
+        component_calls.append((self, np.asarray(y).tolist()))
+        return original_plot(self, x, y, **kwargs)
+
+    monkeypatch.setattr(Axes, "plot", capture_components)
+    plot_opinion_gcc(results, tmp_path / "gcc_statuses.png")
+    assert [values for _, values in component_calls] == [
+        [0.05],
+        [0.01],
+        [5],
+        [0.7],
+        [0.02],
+        [10],
+        [0.3],
+        [0.005],
+        [10],
+    ]
+    assert len({id(axis) for axis, _ in component_calls}) == 9
     assert not plt.get_fignums()
 
 
@@ -308,6 +357,9 @@ def test_sign_shuffle_fraction_sweep_matches_graph_replay(signs):
             matrix = build_matrices(shuffle_edge_signs(graph, seed=row.shuffle_seed)).signed
         replay = simulate_nco(matrix, initial, model="signed", max_steps=10)
         assert row.final_negative_fraction == np.mean(replay.final_state == -1)
+        components = compute_opinion_components(graph, replay.final_state, nodes=network.nodes)
+        for metric, value in components.items():
+            assert getattr(row, metric) == value
         assert row.steps == replay.steps
         assert row.stop_reason == replay.stop_reason
         if replay.cycle_length is None:
@@ -327,9 +379,14 @@ def test_intervention_sweep_plots_without_extra_columns(tmp_path):
     pd.testing.assert_frame_equal(results, run_intervention_sweep(graph, network, **kwargs))
     assert (results["n_nodes"] == 4).all()
     assert (results.loc[results["budget"] == 1, "cluster_size"] == 0).all()
+    np.testing.assert_allclose(results["g_minus"], results["cluster_size"] / 4)
+    assert (results.loc[results["budget"] == 1, "g_plus"] == 1).all()
     path = tmp_path / "intervention.png"
     plot_intervention_comparison(results, path)
     assert path.stat().st_size > 1000
+    positive_path = tmp_path / "positive_intervention.png"
+    plot_intervention_comparison(results, positive_path, opinion="plus")
+    assert positive_path.stat().st_size > 1000
     assert not plt.get_fignums()
 
 
@@ -374,3 +431,15 @@ def test_intervention_plot_separates_stop_statuses(tmp_path, monkeypatch, includ
     if include_steady:
         assert calls[0][2][0] == pytest.approx(np.std([0, 0.5], ddof=1))
     assert not plt.get_fignums()
+
+
+@pytest.mark.parametrize("sign_shuffle", [False, True])
+def test_default_sweep_uses_uniform_fraction_grid(sign_shuffle):
+    graph = nx.path_graph(["a", "b", "c", "d"])
+    nx.set_edge_attributes(graph, 1, "sign")
+    sweep = run_sign_shuffle_fraction_sweep if sign_shuffle else run_fraction_sweep
+    source = graph if sign_shuffle else build_matrices(graph)
+    results = sweep(source, realizations=1, max_steps=0)
+    assert len(results) == 100
+    np.testing.assert_allclose(results["f"].drop_duplicates(), np.linspace(0.02, 1, 50))
+    assert (results.groupby("f")["initial_seed"].nunique() == 1).all()

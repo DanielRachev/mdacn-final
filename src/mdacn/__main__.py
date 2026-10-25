@@ -1,9 +1,10 @@
-"""Commands: python -m mdacn setup / characterise / nco."""
+"""Commands: python -m mdacn setup / characterise / nco / sign-shuffle."""
 
 import argparse
 from pathlib import Path
 
 from mdacn.data import download_dataset
+from mdacn.experiments import DEFAULT_FRACTIONS
 from mdacn.nco_pipeline import run_nco_experiment, run_sign_shuffle_experiment
 from mdacn.pipeline import characterise
 
@@ -37,12 +38,18 @@ def main() -> None:
     analysis.add_argument(
         "--processed-dir", "--processed_dir", type=Path, default=Path("data/processed")
     )
-    analysis.add_argument("--results-dir", type=Path, default=Path("results"))
+    analysis.add_argument("--results-dir", type=Path, default=Path("results/topology"))
 
     nco = commands.add_parser("nco", help="Compare unsigned and signed NCO on the saved core")
     nco.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
     nco.add_argument("--results-dir", type=Path, default=Path("results/nco"))
-    nco.add_argument("--fractions", type=float, nargs="+", default=[i / 10 for i in range(1, 10)])
+    nco.add_argument(
+        "--fractions",
+        type=float,
+        nargs="+",
+        default=DEFAULT_FRACTIONS,
+        help="Initial negative fractions; default is 0.02 to 1.00 in steps of 0.02",
+    )
     nco.add_argument("--realizations", type=int, default=20)
     nco.add_argument("--seed", type=int, default=0)
     nco.add_argument("--max-steps", type=int, default=1000)
@@ -53,7 +60,11 @@ def main() -> None:
     sign_shuffle.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
     sign_shuffle.add_argument("--results-dir", type=Path, default=Path("results/sign_shuffle"))
     sign_shuffle.add_argument(
-        "--fractions", type=float, nargs="+", default=[i / 10 for i in range(1, 10)]
+        "--fractions",
+        type=float,
+        nargs="+",
+        default=DEFAULT_FRACTIONS,
+        help="Initial negative fractions; default is 0.02 to 1.00 in steps of 0.02",
     )
     sign_shuffle.add_argument("--realizations", type=int, default=20)
     sign_shuffle.add_argument("--seed", type=int, default=0)
