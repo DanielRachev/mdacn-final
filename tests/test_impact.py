@@ -5,7 +5,7 @@ import pytest
 
 from mdacn.data import build_matrices
 from mdacn.dynamics import simulate_nco
-from mdacn.impact import iter_node_impacts, stratified_sample
+from mdacn.impact import iter_node_impacts
 from mdacn.interventions import simulate_ico
 
 
@@ -51,28 +51,6 @@ def test_unpinned_ico_matches_nco_cycles_and_limits(model):
         )
 
 
-def test_sampling_is_repeatable_and_covers_occupied_ranges():
-    features = pd.DataFrame(
-        {
-            "node": [f"n{i:02}" for i in range(60)],
-            "degree": np.repeat([2, 5, 20], 20),
-            "negative_incident_ratio": np.tile(np.repeat([0, 0.1, 0.5, 1], 5), 3),
-        }
-    )
-    sample, coverage = stratified_sample(features, sample_size=30, seed=12)
-    shuffled, _ = stratified_sample(
-        features.sample(frac=1, random_state=9), sample_size=30, seed=12
-    )
-    pd.testing.assert_frame_equal(sample, shuffled)
-    assert len(sample) == sample.node.nunique() == 30
-    assert (coverage.sampled_nodes > 0).all()
-    assert coverage.sampled_nodes.sum() == 30
-    assert sample.negative_incident_ratio.min() == 0
-    assert sample.negative_incident_ratio.max() == 1
-    with pytest.raises(ValueError, match="occupied strata"):
-        stratified_sample(features, sample_size=1)
-
-
 def test_single_node_impacts_pair_settled_baseline_and_use_gcc(monkeypatch):
     import mdacn.impact as impact
 
@@ -88,9 +66,11 @@ def test_single_node_impacts_pair_settled_baseline_and_use_gcc(monkeypatch):
 
     monkeypatch.setattr(impact, "simulate_ico", capture)
     runs = pd.DataFrame(
-        iter_node_impacts(graph, build_matrices(graph), ("b", "d"), realizations=2, max_steps=20)
+        iter_node_impacts(graph, build_matrices(graph), realizations=2, max_steps=20)
     )
-    assert len(runs) == 8
+    assert len(runs) == 16
+    assert set(runs.node) == set(graph)
+    assert runs.groupby(["model", "realization"]).node.nunique().eq(len(graph)).all()
     assert all(state.tolist() == [-1, -1, -1, -1] for state in starts)
     assert runs.groupby("realization").initial_seed.nunique().eq(1).all()
     middle = runs.loc[runs.node == "b"]
@@ -111,11 +91,38 @@ def test_nonsteady_baselines_are_retained_but_not_intervened(monkeypatch):
     monkeypatch.setattr(impact, "initialize_opinions", lambda *a, **k: initial.copy())
     monkeypatch.setattr(impact, "simulate_ico", lambda *a, **k: pytest.fail("Baseline cycles"))
     runs = pd.DataFrame(
-        iter_node_impacts(
-            graph, build_matrices(graph), (0, 3), models=("unsigned",), realizations=1
-        )
+        iter_node_impacts(graph, build_matrices(graph), models=("unsigned",), realizations=1)
     )
     assert runs.baseline_stop_reason.eq("limit_cycle").all()
     assert runs.intervention_stop_reason.eq("not_run").all()
     assert runs.impact.isna().all()
     assert not runs.eligible.any()
+
+
+def test_all_nodes_include_positive_nodes_and_share_one_baseline(monkeypatch):
+    import mdacn.impact as impact
+
+    graph = nx.path_graph(["a", "b", "c", "d"])
+    nx.set_edge_attributes(graph, 1, "sign")
+    initial = np.array([-1, -1, 1, 1], dtype=np.int8)
+    monkeypatch.setattr(impact, "initialize_opinions", lambda *a, **k: initial.copy())
+    baselines = []
+
+    def capture(*args, **kwargs):
+        baselines.append(kwargs["model"])
+        return simulate_nco(*args, **kwargs)
+
+    monkeypatch.setattr(impact, "simulate_nco", capture)
+    runs = pd.DataFrame(iter_node_impacts(graph, build_matrices(graph), realizations=2))
+    assert baselines == ["unsigned", "signed"] * 2
+    assert len(runs) == 16
+    positive = runs[runs.baseline_node_opinion == 1]
+    assert set(positive.node) == {"c", "d"}
+    assert positive.impact.eq(0).all()
+    assert positive.eligible.all()
+
+
+def test_empty_core_is_rejected():
+    graph = nx.Graph()
+    with pytest.raises(ValueError, match="Core must contain"):
+        list(iter_node_impacts(graph, build_matrices(graph)))

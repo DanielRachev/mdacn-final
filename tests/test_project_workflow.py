@@ -71,8 +71,6 @@ def project(tmp_path, monkeypatch):
         config,
         "NODE_IMPACT",
         {
-            "power": {"effect_size": 0.9999, "target_power": 0.8, "alpha": 0.05, "comparisons": 1},
-            "sampling": {"bins": 1, "seed": 0},
             "simulation": {**config.SIMULATION, "models": ["unsigned", "signed"]},
             "analysis": {"bootstrap": 10, "seed": 0},
         },

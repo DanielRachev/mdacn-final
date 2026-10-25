@@ -1,4 +1,4 @@
-"""Descriptive associations for sampled nodes, with paired-seed uncertainty."""
+"""Core-node associations with paired-seed uncertainty."""
 
 import numpy as np
 import pandas as pd
@@ -39,7 +39,7 @@ def _fit_regression(
     n, p = x.shape
     diagnostic = {
         **context,
-        "sample_nodes": len(features),
+        "n_nodes": len(features),
         "complete_nodes": n,
         "dropped_nodes": len(features) - n,
         "common_runs": common_runs,
@@ -94,7 +94,7 @@ def _fit_regression(
 
 def calculate_impact_statistics(
     runs: pd.DataFrame,
-    sample: pd.DataFrame,
+    node_features: pd.DataFrame,
     *,
     bootstrap: int = 1000,
     seed: int = 0,
@@ -102,17 +102,17 @@ def calculate_impact_statistics(
     """Calculate statistics using common steady runs and shared seed resampling."""
     if bootstrap < 2:
         raise ValueError("bootstrap must be at least 2")
-    if runs.empty or sample.empty:
-        raise ValueError("Runs and sample must be nonempty")
+    if runs.empty or node_features.empty:
+        raise ValueError("Runs and node features must be nonempty")
     if (
-        sample.node.duplicated().any()
+        node_features.node.duplicated().any()
         or runs.duplicated(["model", "f", "realization", "node"]).any()
     ):
-        raise ValueError("Duplicate sample nodes or repeated run keys")
-    nodes = sample.node.tolist()
+        raise ValueError("Duplicate core nodes or repeated run keys")
+    nodes = node_features.node.tolist()
     if set(runs.node) != set(nodes):
-        raise ValueError("Run nodes must match the declared sample")
-    features = validate_features(sample, nodes).set_index("node").reindex(nodes)
+        raise ValueError("Run nodes must match the core feature table")
+    features = validate_features(node_features, nodes).set_index("node").reindex(nodes)
     rng = np.random.default_rng(seed)
     summaries, correlations, coefficients, diagnostics = [], [], [], []
     stops = (
@@ -128,7 +128,7 @@ def calculate_impact_statistics(
     for (model, fraction), group in runs.groupby(["model", "f"], sort=True):
         context = {"model": model, "f": fraction}
         if not group.groupby("realization").node.nunique().eq(len(nodes)).all():
-            raise ValueError("Every realization must contain every sampled node")
+            raise ValueError("Every realization must contain every core node")
         if not group.groupby("realization").initial_seed.nunique().eq(1).all():
             raise ValueError("Nodes in a realization must share an initial seed")
         steady = (group.baseline_stop_reason == "steady_state") & (
@@ -209,7 +209,7 @@ def calculate_impact_statistics(
         coefficients.extend(fitted)
         diagnostics.append(diagnostic)
 
-    summary = pd.DataFrame(summaries).merge(sample, on="node", validate="many_to_one")
+    summary = pd.DataFrame(summaries).merge(node_features, on="node", validate="many_to_one")
     return {
         "node_impact": summary,
         "correlations": pd.DataFrame(correlations),

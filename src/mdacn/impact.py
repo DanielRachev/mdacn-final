@@ -1,65 +1,14 @@
-"""Sampled single-node intervention study on the fixed aggregate core."""
+"""Single-node interventions for every node of the fixed aggregate core."""
 
 from collections.abc import Iterator
 
 import networkx as nx
 import numpy as np
-import pandas as pd
 from tqdm.auto import tqdm
 
 from mdacn.contracts import NetworkMatrices
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.interventions import opposing_cluster_size, simulate_ico
-
-
-def stratified_sample(
-    features: pd.DataFrame, *, sample_size: int = 30, bins: int = 3, seed: int = 0
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Sample across degree and incident-sign ranges before seeing outcomes.
-
-    Quantile cut points do not split equal values. Zero negative-incident ratios
-    form their own group. Allocate one node per occupied stratum, then cycle
-    through strata in seeded random order until the requested size is reached.
-    This is a coverage sample, not a representative probability sample.
-    """
-    if bins < 1 or not 1 <= sample_size <= len(features):
-        raise ValueError("Require bins >= 1 and 1 <= sample_size <= core node count")
-    frame = features.sort_values("node").reset_index(drop=True).copy()
-
-    def groups(values: pd.Series) -> np.ndarray:
-        cuts = np.unique(np.quantile(values, np.linspace(0, 1, bins + 1)[1:-1]))
-        return np.searchsorted(cuts, values, side="left")
-
-    frame["degree_bin"] = groups(frame.degree)
-    frame["negative_ratio_bin"] = 0
-    positive = frame.negative_incident_ratio > 0
-    if positive.any():
-        frame.loc[positive, "negative_ratio_bin"] = 1 + groups(
-            frame.loc[positive, "negative_incident_ratio"]
-        )
-    keys = ["degree_bin", "negative_ratio_bin"]
-    strata = list(frame.groupby(keys, sort=True).groups.items())
-    if sample_size < len(strata):
-        raise ValueError(f"sample_size must cover all {len(strata)} occupied strata")
-    rng = np.random.default_rng(seed)
-    pools = [list(rng.permutation(indices)) for _, indices in strata]
-    selected = []
-    while len(selected) < sample_size:
-        for index in rng.permutation(len(pools)):
-            if pools[index]:
-                selected.append(pools[index].pop())
-                if len(selected) == sample_size:
-                    break
-    frame["selected"] = frame.index.isin(selected)
-    coverage = frame.groupby(keys, as_index=False).agg(
-        core_nodes=("node", "size"),
-        sampled_nodes=("selected", "sum"),
-        degree_min=("degree", "min"),
-        degree_max=("degree", "max"),
-        negative_ratio_min=("negative_incident_ratio", "min"),
-        negative_ratio_max=("negative_incident_ratio", "max"),
-    )
-    return frame.loc[frame.selected].drop(columns="selected").reset_index(drop=True), coverage
 
 
 def validate_design(
@@ -78,7 +27,6 @@ def validate_design(
 def iter_node_impacts(
     graph: nx.Graph,
     network: NetworkMatrices,
-    sample_nodes: tuple[str, ...],
     *,
     fractions: tuple[float, ...] = (0.5,),
     models: tuple[str, ...] = ("unsigned", "signed"),
@@ -90,7 +38,7 @@ def iter_node_impacts(
     """Yield paired single-node outcomes, including all unsuccessful stops.
 
     Every candidate uses the same settled baseline for a model/f/realization.
-    Pin any sampled node to +1; divide opposing GCC sizes by the full core N.
+    Pin each core node to +1 separately; divide opposing GCC sizes by the full core N.
     The no-intervention state remains unchanged because that baseline is fixed.
     Nonsteady baselines are recorded but never used as intervention starts.
     Nonsteady interventions retain terminal impact, excluded from primary analysis.
@@ -98,15 +46,13 @@ def iter_node_impacts(
     validate_design(fractions, models, realizations, max_steps)
     if network.nodes != tuple(sorted(graph)):
         raise ValueError("Saved matrices must use the core node order")
-    if not sample_nodes or len(set(sample_nodes)) != len(sample_nodes):
-        raise ValueError("sample_nodes must be nonempty and unique")
-    if not set(sample_nodes) <= set(network.nodes):
-        raise ValueError("Sample nodes must belong to the core")
     n = len(network.nodes)
+    if not n:
+        raise ValueError("Core must contain at least one node")
     positions = {node: index for index, node in enumerate(network.nodes)}
     seeds = np.random.SeedSequence(seed).spawn(len(fractions) * realizations)
     with tqdm(
-        total=len(fractions) * realizations * len(models) * len(sample_nodes),
+        total=len(fractions) * realizations * len(models) * n,
         desc="Single-node interventions",
         disable=not show_progress,
     ) as progress:
@@ -120,7 +66,7 @@ def iter_node_impacts(
                     baseline_g = (
                         opposing_cluster_size(graph, network.nodes, baseline.final_state) / n
                     )
-                    for node in sample_nodes:
+                    for node in network.nodes:
                         row = {
                             "node": node,
                             "model": model,

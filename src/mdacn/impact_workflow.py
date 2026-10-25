@@ -6,14 +6,12 @@ from copy import deepcopy
 from pathlib import Path
 
 from mdacn.config import impact_settings
-from mdacn.data import load_graph
 from mdacn.impact import validate_design
 from mdacn.impact_pipeline import (
     prepare_impact_study,
     save_impact_reports,
     simulate_impact_study,
 )
-from mdacn.power import required_nodes
 
 
 def _positive_integer(value: object, name: str, minimum: int = 1) -> None:
@@ -56,13 +54,9 @@ def run_node_impact(
             "results_dir",
             "features",
             "feature_metadata",
-            "power",
-            "sampling",
             "simulation",
             "analysis",
         },
-        "power": {"effect_size", "target_power", "alpha", "comparisons"},
-        "sampling": {"bins", "seed"},
         "simulation": {"fractions", "models", "realizations", "seed", "max_steps"},
         "analysis": {"bootstrap", "seed"},
     }
@@ -70,16 +64,14 @@ def run_node_impact(
         values = config if not section else config.get(section)
         if not isinstance(values, dict) or set(values) != keys:
             raise ValueError(f"Invalid {section or 'root'} config; expected keys: {sorted(keys)}")
-    power, sampling = config["power"], config["sampling"]
     simulation, analysis = config["simulation"], config["analysis"]
     for name, value in (
-        ("sampling.bins", sampling["bins"]),
         ("simulation.realizations", simulation["realizations"]),
         ("simulation.max_steps", simulation["max_steps"]),
     ):
         _positive_integer(value, name)
     _positive_integer(analysis["bootstrap"], "analysis.bootstrap", minimum=2)
-    for section in (sampling, simulation, analysis):
+    for section in (simulation, analysis):
         _positive_integer(section["seed"], "seed", minimum=0)
     validate_design(
         tuple(simulation["fractions"]),
@@ -90,23 +82,19 @@ def run_node_impact(
     for name in ("graph", "results_dir", "features", "feature_metadata"):
         if not isinstance(config[name], str) or not config[name]:
             raise ValueError(f"{name} must be a nonempty path")
-    sample_size = required_nodes(**power)
     graph_path, output = Path(config["graph"]), Path(config["results_dir"])
     if output.exists() and not output.is_dir():
         raise ValueError("results_dir must be a directory")
-    graph_size = load_graph(graph_path).number_of_nodes()
-    if sample_size > graph_size:
-        raise ValueError(
-            f"Power reference requires {sample_size} nodes but core has {graph_size}; "
-            "no sample was reduced and no simulations ran"
-        )
     features_path = Path(config["features"])
     feature_metadata_path = Path(config["feature_metadata"])
-    for path in (features_path, feature_metadata_path):
+    for path, stage in (
+        (graph_path, "characterise"),
+        (features_path, "features"),
+        (feature_metadata_path, "features"),
+    ):
         if not path.is_file():
-            raise ValueError(f"Missing feature input: {path}; run features first")
+            raise ValueError(f"Missing input: {path}; run {stage} first")
     study = _reset_study(output, (graph_path, features_path, feature_metadata_path))
-    print(f"Sample size: {sample_size} nodes")
     output.mkdir(parents=True, exist_ok=True)
     (output / "config.json").write_text(
         json.dumps(config, indent=2, allow_nan=False) + "\n", encoding="utf-8"
@@ -116,9 +104,6 @@ def run_node_impact(
         results_dir=study,
         features_path=features_path,
         feature_metadata_path=feature_metadata_path,
-        sample_size=sample_size,
-        bins=sampling["bins"],
-        sample_seed=sampling["seed"],
         fractions=tuple(simulation["fractions"]),
         models=tuple(simulation["models"]),
         realizations=simulation["realizations"],

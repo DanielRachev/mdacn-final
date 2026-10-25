@@ -11,11 +11,7 @@ import pandas as pd
 from mdacn.artifacts import checksum, write_json
 from mdacn.data import load_graph, load_matrices
 from mdacn.features import PREDICTORS, validate_features
-from mdacn.impact import (
-    iter_node_impacts,
-    stratified_sample,
-    validate_design,
-)
+from mdacn.impact import iter_node_impacts, validate_design
 from mdacn.impact_analysis import calculate_impact_statistics
 from mdacn.impact_plots import save_impact_plots
 
@@ -54,16 +50,13 @@ def prepare_impact_study(
     results_dir: Path,
     features_path: Path,
     feature_metadata_path: Path,
-    sample_size: int = 30,
-    bins: int = 3,
-    sample_seed: int = 0,
     fractions: tuple[float, ...] = (0.5,),
     models: tuple[str, ...] = ("unsigned", "signed"),
     realizations: int = 20,
     seed: int = 0,
     max_steps: int = 1000,
 ) -> dict:
-    """Freeze sample, features, input hashes, and simulation settings before any run."""
+    """Freeze all core-node features, input hashes, and simulation settings."""
     validate_design(fractions, models, realizations, max_steps)
     np.random.SeedSequence(seed)
     if results_dir.exists() and any(results_dir.iterdir()):
@@ -78,28 +71,17 @@ def prepare_impact_study(
     if set(features.node) != set(graph):
         raise ValueError("Feature table does not cover the core; run features again")
     features = validate_features(features, graph)
-    sample, coverage = stratified_sample(
-        features, sample_size=sample_size, bins=bins, seed=sample_seed
-    )
     results_dir.mkdir(parents=True, exist_ok=True)
-    for name, table in (("features", features), ("sample", sample), ("sample_coverage", coverage)):
-        table.to_csv(results_dir / f"{name}.csv", index=False)
+    features.to_csv(results_dir / "features.csv", index=False)
     plan = {
-        "schema_version": 1,
+        "schema_version": 2,
         "graph_path": str(graph_path.resolve()),
         "graph_sha256": checksum(graph_path),
         "graph_metadata": graph.graph,
         "n_nodes": graph.number_of_nodes(),
         "n_edges": graph.number_of_edges(),
         "nodes": sorted(graph),
-        "sample_size": sample_size,
-        "bins": bins,
-        "sample_seed": sample_seed,
-        "sample_nodes": sample.node.tolist(),
-        "frozen_files": {
-            f"{name}.csv": checksum(results_dir / f"{name}.csv")
-            for name in ("features", "sample", "sample_coverage")
-        },
+        "frozen_files": {"features.csv": checksum(results_dir / "features.csv")},
         "feature_sources": sources,
         "feature_metadata": {
             "path": str(feature_metadata_path.resolve()),
@@ -114,14 +96,14 @@ def prepare_impact_study(
         **_provenance(),
     }
     write_json(results_dir / "plan.json", plan)
-    print(f"Prepared {sample_size} nodes in {len(coverage)} strata: {results_dir}")
+    print(f"Prepared all {len(features)} core nodes: {results_dir}")
     return plan
 
 
 def _load_plan(results_dir: Path) -> dict:
     plan = json.loads((results_dir / "plan.json").read_text(encoding="utf-8"))
-    if plan["schema_version"] != 1:
-        raise ValueError("Unsupported impact plan version")
+    if plan["schema_version"] != 2:
+        raise ValueError("Unsupported impact plan version; run node-impact again")
     for filename, expected_checksum in plan["frozen_files"].items():
         if checksum(results_dir / filename) != expected_checksum:
             raise ValueError(f"Frozen input changed: {filename}; prepare a new study")
@@ -129,7 +111,7 @@ def _load_plan(results_dir: Path) -> dict:
 
 
 def simulate_impact_study(results_dir: Path) -> None:
-    """Run only the previously declared sample/settings; never silently replace results."""
+    """Run every core node using the frozen settings; never silently replace results."""
     plan = _load_plan(results_dir)
     graph_path = Path(plan["graph_path"])
     if checksum(graph_path) != plan["graph_sha256"]:
@@ -148,7 +130,6 @@ def simulate_impact_study(results_dir: Path) -> None:
         for row in iter_node_impacts(
             graph,
             network,
-            tuple(plan["sample_nodes"]),
             fractions=tuple(plan["fractions"]),
             models=tuple(plan["models"]),
             realizations=plan["realizations"],
@@ -180,18 +161,20 @@ def save_impact_reports(
         raise ValueError("Plan changed after simulation")
     if metadata["runs_sha256"] != checksum(results_dir / "runs.csv"):
         raise ValueError("Simulation output changed")
-    sample = pd.read_csv(
-        results_dir / "sample.csv", dtype={"node": str}, keep_default_na=False, na_values=[""]
+    features = pd.read_csv(
+        results_dir / "features.csv", dtype={"node": str}, keep_default_na=False, na_values=[""]
     )
     runs = pd.read_csv(
         results_dir / "runs.csv", dtype={"node": str}, keep_default_na=False, na_values=[""]
     )
     expected_rows = (
-        plan["sample_size"] * len(plan["models"]) * len(plan["fractions"]) * plan["realizations"]
+        plan["n_nodes"] * len(plan["models"]) * len(plan["fractions"]) * plan["realizations"]
     )
     if len(runs) != expected_rows:
         raise ValueError("Incomplete simulation output")
-    tables = calculate_impact_statistics(runs, sample, bootstrap=bootstrap, seed=seed)
+    if features.node.tolist() != plan["nodes"]:
+        raise ValueError("Frozen features must follow the full core node order")
+    tables = calculate_impact_statistics(runs, features, bootstrap=bootstrap, seed=seed)
     output = results_dir / "analysis"
     output.mkdir(exist_ok=True)
     for name, table in tables.items():

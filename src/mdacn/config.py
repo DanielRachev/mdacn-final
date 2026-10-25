@@ -64,16 +64,6 @@ ICO = {"budgets": [0.0, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25]}
 
 # Node-impact overrides and settings specific to that workflow.
 NODE_IMPACT = {
-    "power": {
-        # Prespecified target; this gives a reference budget, not network-valid power.
-        "effect_size": 0.3,
-        "target_power": 0.8,
-        "alpha": 0.05,
-        # Seven primary Pearson scores x two models at one f.
-        # Spearman and multivariable regression remain descriptive.
-        "comparisons": 14,
-    },
-    "sampling": {"bins": 3, "seed": SIMULATION["seed"]},
     "simulation": {
         **SIMULATION,
         "fractions": [0.5],

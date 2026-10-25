@@ -36,7 +36,7 @@ uv run python -m mdacn reports
 | `nco` | Save unsigned and signed simulation outcomes on the exported core. |
 | `sign-shuffle` | Save paired empirical/sign-shuffled simulation outcomes. |
 | `ico` | Load saved matrices and scores, then save the existing unsigned random/degree/leverage budget sweep for each configured initial fraction. |
-| `node-impact` | Calculate sample size, load saved scores, and save paired single-node intervention outcomes. |
+| `node-impact` | Load saved scores and save paired single-node intervention outcomes for every core node. |
 | `reports` | Save summaries, impact statistics, and plots from stored experiment results. |
 
 Stages overwrite their generated outputs. Missing prerequisites produce an error
@@ -117,7 +117,7 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 | `results/nco/` | Simulation results, summaries, figures, and metadata. |
 | `results/sign_shuffle/` | Sign-shuffle results, summaries, PNG/PDF figures, metadata, and node order. |
 | `results/ico/` | `intervention_sweep.csv`, run settings and node order; `reports` adds `intervention_summary.csv` and comparison PNGs per initial fraction. |
-| `results/node_impact/` | Run config and `study/` containing the sample, paired outcomes, and `analysis/`. |
+| `results/node_impact/` | Run config and `study/` containing frozen core features, paired outcomes, and `analysis/`. |
 
 Generated files are ignored by Git. Reruns replace outputs in the selected
 directories. Rerun preprocessing after changing data rules.
