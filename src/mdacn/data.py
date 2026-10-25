@@ -1,5 +1,6 @@
 """Reddit input, static core extraction, and shared graph export."""
 
+import json
 from pathlib import Path
 from shutil import copyfileobj
 from typing import Literal
@@ -8,8 +9,10 @@ from urllib.request import urlopen
 import networkx as nx
 import numpy as np
 import pandas as pd
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, load_npz, save_npz
 
+from mdacn.artifacts import checksum, write_json
+from mdacn.config import processed_paths
 from mdacn.contracts import NetworkMatrices
 
 DATASET_URLS = {
@@ -183,6 +186,42 @@ def export_graph(graph: nx.Graph, path: Path) -> None:
     """Owner: Jacek. Save a GraphML graph with subreddit names and edge attributes."""
     path.parent.mkdir(parents=True, exist_ok=True)
     nx.write_graphml(graph, path)
+
+
+def save_matrices(network: NetworkMatrices, graph_path: Path) -> None:
+    """Save aligned matrices and their association with the exported graph."""
+    paths = processed_paths(graph_path.parent)
+    save_npz(paths["unsigned"], network.unsigned)
+    save_npz(paths["signed"], network.signed)
+    write_json(paths["nodes"], network.nodes)
+    write_json(
+        paths["network_metadata"],
+        {
+            "graph_sha256": checksum(graph_path),
+            "files": {name: checksum(paths[name]) for name in ("unsigned", "signed", "nodes")},
+        },
+    )
+
+
+def load_matrices(graph_path: Path) -> NetworkMatrices:
+    """Load previously exported matrices; missing or stale inputs are errors."""
+    paths = processed_paths(graph_path.parent)
+    for name in ("unsigned", "signed", "nodes", "network_metadata"):
+        if not paths[name].is_file():
+            raise ValueError(f"Missing matrix input: {paths[name]}. Run characterise first.")
+    metadata = json.loads(paths["network_metadata"].read_text(encoding="utf-8"))
+    if metadata["graph_sha256"] != checksum(graph_path):
+        raise ValueError("Core changed since matrices were exported; run characterise again")
+    for name in ("unsigned", "signed", "nodes"):
+        if metadata["files"][name] != checksum(paths[name]):
+            raise ValueError(f"Saved {name} changed; run characterise again")
+    nodes = tuple(json.loads(paths["nodes"].read_text(encoding="utf-8")))
+    unsigned, signed = (load_npz(paths[name]).tocsr() for name in ("unsigned", "signed"))
+    if len(set(nodes)) != len(nodes) or tuple(sorted(nodes)) != nodes:
+        raise ValueError("Saved node order must be sorted and unique")
+    if unsigned.shape != (len(nodes), len(nodes)) or signed.shape != unsigned.shape:
+        raise ValueError("Saved matrices do not match the node order")
+    return NetworkMatrices(nodes, unsigned, signed)
 
 
 def load_graph(path: Path) -> nx.Graph:

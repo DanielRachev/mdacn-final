@@ -1,114 +1,124 @@
-"""Dataset setup, graph characterisation, structural comparisons, and experiments."""
+"""Command-line entry points for preprocessing, dynamics, and impact analysis."""
 
 import argparse
 from pathlib import Path
 
-from mdacn.data import download_dataset
-from mdacn.experiments import DEFAULT_FRACTIONS
+import matplotlib
+
+from mdacn import config
 from mdacn.extraction_comparison import compare_extractions
 from mdacn.link_comparison import compare_link_sources
-from mdacn.nco_pipeline import run_nco_experiment, run_sign_shuffle_experiment
-from mdacn.pipeline import characterise
-
-DEFAULT_DATASET_PATH = Path("data/raw/soc-RedditHyperlinks-body.tsv")
-DEFAULT_TITLE_PATH = Path("data/raw/soc-RedditHyperlinks-title.tsv")
+from mdacn.workflow import run_project, run_stage
 
 
 def main() -> None:
+    matplotlib.use("Agg")  # Commands save figures to files; no GUI is needed.
     parser = argparse.ArgumentParser(
         prog="python -m mdacn", description="MDACN Project Reddit Graph Echo Chamber"
     )
 
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("run", help="Run all implemented project stages using config.py")
     setup = commands.add_parser("setup", help="Download a SNAP link TSV; keep an existing file")
     setup.add_argument("--dataset", choices=("body", "title"), default="body")
     setup.add_argument("--output", type=Path)
 
-    analysis = commands.add_parser(
+    characterisation = commands.add_parser(
         "characterise", help="Save aggregate/core graphs, metrics, and plots"
     )
-    analysis.add_argument("--input", type=Path, default=DEFAULT_DATASET_PATH)
-    analysis.add_argument("--core-method", choices=("k_core", "activity_lcc"), default="k_core")
-    analysis.add_argument(
-        "--k", type=int, default=10, help="Minimum degree within the k-core (default: 10)"
+    characterisation.add_argument("--input", type=Path, default=Path(config.PATHS["dataset"]))
+    characterisation.add_argument(
+        "--core-method",
+        choices=("k_core", "activity_lcc"),
+        default=config.CHARACTERISATION["core_method"],
     )
-    analysis.add_argument(
+    characterisation.add_argument(
+        "--k",
+        type=int,
+        default=config.CHARACTERISATION["k"],
+        help="Minimum degree within the k-core",
+    )
+    characterisation.add_argument(
         "--min-interactions",
         type=int,
-        default=100,
-        help="Original activity threshold (default: 100)",
+        default=config.CHARACTERISATION["min_interactions"],
+        help="Original activity threshold",
     )
-    analysis.add_argument("--seed", type=int, default=42)
-    analysis.add_argument(
-        "--processed-dir", "--processed_dir", type=Path, default=Path("data/processed")
+    characterisation.add_argument("--seed", type=int, default=config.CHARACTERISATION["seed"])
+    characterisation.add_argument(
+        "--processed-dir",
+        "--processed_dir",
+        type=Path,
+        default=Path(config.PATHS["processed_dir"]),
     )
-    analysis.add_argument("--results-dir", type=Path, default=Path("results/topology"))
+    characterisation.add_argument(
+        "--results-dir", type=Path, default=config.stage_paths()["topology"]
+    )
 
     extraction = commands.add_parser(
         "compare-extractions", help="Compare k-core and activity-LCC topology; export each core"
     )
-    extraction.add_argument("--input", type=Path, default=DEFAULT_DATASET_PATH)
+    extraction.add_argument("--input", type=Path, default=Path(config.PATHS["dataset"]))
     extraction.add_argument("--ks", type=int, nargs="+", default=(8, 10, 12))
     extraction.add_argument("--min-interactions", type=int, default=100)
     extraction.add_argument("--seed", type=int, default=0)
     extraction.add_argument(
-        "--processed-dir", type=Path, default=Path("data/processed/extraction_comparison")
+        "--processed-dir",
+        type=Path,
+        default=Path(config.PATHS["processed_dir"]) / "extraction_comparison",
     )
     extraction.add_argument(
-        "--results-dir", type=Path, default=Path("results/extraction_comparison")
+        "--results-dir",
+        type=Path,
+        default=Path(config.PATHS["results_dir"]) / "extraction_comparison",
     )
 
     links = commands.add_parser(
         "compare-link-sources", help="Audit body/title coverage and overlap without simulations"
     )
-    links.add_argument("--body-input", type=Path, default=DEFAULT_DATASET_PATH)
-    links.add_argument("--title-input", type=Path, default=DEFAULT_TITLE_PATH)
+    links.add_argument("--body-input", type=Path, default=Path(config.PATHS["dataset"]))
+    links.add_argument("--title-input", type=Path, default=Path(config.PATHS["title_dataset"]))
     links.add_argument("--k", type=int, default=10)
-    links.add_argument("--results-dir", type=Path, default=Path("results/link_sources"))
+    links.add_argument(
+        "--results-dir", type=Path, default=Path(config.PATHS["results_dir"]) / "link_sources"
+    )
 
-    nco = commands.add_parser("nco", help="Compare unsigned and signed NCO on the saved core")
-    nco.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
-    nco.add_argument("--results-dir", type=Path, default=Path("results/nco"))
-    nco.add_argument(
-        "--fractions",
-        type=float,
-        nargs="+",
-        default=DEFAULT_FRACTIONS,
-        help="Initial negative fractions; default is 0.02 to 1.00 in steps of 0.02",
-    )
-    nco.add_argument("--realizations", type=int, default=20)
-    nco.add_argument("--seed", type=int, default=0)
-    nco.add_argument("--max-steps", type=int, default=1000)
+    simulation_commands = {
+        "nco": "Compare unsigned and signed NCO on the saved core",
+        "sign-shuffle": "Compare empirical signed NCO against a sign-shuffled null model",
+        "ico": "Run existing random, degree, and leverage ICO interventions",
+    }
+    paths = config.stage_paths()
+    for name, help_text in simulation_commands.items():
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("--graph", type=Path, default=paths["core"])
+        command.add_argument("--results-dir", type=Path, default=paths[name])
+        command.add_argument(
+            "--fractions", type=float, nargs="+", default=config.SIMULATION["fractions"]
+        )
+        command.add_argument("--realizations", type=int, default=config.SIMULATION["realizations"])
+        command.add_argument("--seed", type=int, default=config.SIMULATION["seed"])
+        command.add_argument("--max-steps", type=int, default=config.SIMULATION["max_steps"])
+        if name == "ico":
+            command.add_argument("--budgets", type=float, nargs="+", default=config.ICO["budgets"])
 
-    sign_shuffle = commands.add_parser(
-        "sign-shuffle", help="Compare empirical signed NCO against sign-shuffled null model"
+    commands.add_parser("centrality", help="Calculate and save the existing core centrality scores")
+    commands.add_parser("features", help="Save node scores for subsequent experiments")
+    commands.add_parser("node-impact", help="Run paired interventions using saved node scores")
+    commands.add_parser(
+        "reports", help="Save summaries, impact statistics, and plots from stored results"
     )
-    sign_shuffle.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
-    sign_shuffle.add_argument("--results-dir", type=Path, default=Path("results/sign_shuffle"))
-    sign_shuffle.add_argument(
-        "--fractions",
-        type=float,
-        nargs="+",
-        default=DEFAULT_FRACTIONS,
-        help="Initial negative fractions; default is 0.02 to 1.00 in steps of 0.02",
-    )
-    sign_shuffle.add_argument("--realizations", type=int, default=20)
-    sign_shuffle.add_argument("--seed", type=int, default=0)
-    sign_shuffle.add_argument("--max-steps", type=int, default=1000)
 
     args = parser.parse_args()
     try:
-        if args.command == "setup":
-            output = args.output or (
-                DEFAULT_DATASET_PATH if args.dataset == "body" else DEFAULT_TITLE_PATH
-            )
-            exists = output.is_file()
-            print(f"{'Using existing' if exists else 'Downloading'}")
-            download_dataset(output, dataset=args.dataset)
-            print(f"Dataset ready: {output}")
+        if args.command == "run":
+            run_project()
+        elif args.command == "setup":
+            run_stage("setup", output=args.output, dataset=args.dataset)
         elif args.command == "characterise":
-            characterise(
-                args.input,
+            run_stage(
+                "characterise",
+                input_path=args.input,
                 core_method=args.core_method,
                 k=args.k,
                 min_interactions=args.min_interactions,
@@ -132,26 +142,19 @@ def main() -> None:
                 k=args.k,
                 results_dir=args.results_dir,
             )
-        elif args.command == "nco":
-            run_nco_experiment(
-                args.graph,
+        elif args.command in simulation_commands:
+            run_stage(
+                args.command,
+                graph_path=args.graph,
                 results_dir=args.results_dir,
                 fractions=tuple(args.fractions),
                 realizations=args.realizations,
                 seed=args.seed,
                 max_steps=args.max_steps,
-            )
-        elif args.command == "sign-shuffle":
-            run_sign_shuffle_experiment(
-                args.graph,
-                results_dir=args.results_dir,
-                fractions=tuple(args.fractions),
-                realizations=args.realizations,
-                seed=args.seed,
-                max_steps=args.max_steps,
+                **({"budgets": tuple(args.budgets)} if args.command == "ico" else {}),
             )
         else:
-            print(f"Unknown command supplied: {args.command}")
+            run_stage(args.command)
     except Exception as error:
         parser.exit(1, f"{parser.prog}: {error}\n")
 

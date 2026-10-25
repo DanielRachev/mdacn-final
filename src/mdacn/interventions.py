@@ -1,4 +1,4 @@
-"""ICO interventions on the unsigned network."""
+"""ICO interventions on unsigned and signed networks."""
 
 from heapq import nlargest
 
@@ -6,8 +6,8 @@ import networkx as nx
 import numpy as np
 from scipy.sparse import csr_matrix
 
-from mdacn.contracts import OpinionState, SimulationResult, Strategy
-from mdacn.dynamics import detect_attractor
+from mdacn.contracts import Model, OpinionState, SimulationResult, Strategy
+from mdacn.dynamics import _prepare_matrix, _prepare_state, _step
 
 
 def _validate_nonnegative_integer(value: int, name: str) -> None:
@@ -68,20 +68,21 @@ def simulate_ico(
     nodes: tuple[str, ...],
     contrarians: tuple[str, ...],
     max_steps: int,
+    model: Model = "unsigned",
 ) -> SimulationResult:
-    """Owner: Polly. Run unsigned ICO with selected nodes fixed at +1 from time zero.
+    """Run ICO with selected nodes fixed at +1 from the intervention start.
 
-    Unselected nodes follow Daniel's unsigned NCO behavior. Result fields and
-    stop reasons match SimulationResult. Node names match the matrix order.
+    The default retains Polly's unsigned interface. Signed runs use the same
+    synchronous update, self vote, and tie convention as Daniel's signed NCO.
+    Callers supply the settled baseline when applying post-baseline intervention.
     """
     _validate_nonnegative_integer(max_steps, "max_steps")
+    if len(nodes) != len(set(nodes)):
+        raise ValueError("nodes must be unique")
     if adjacency.shape != (len(nodes), len(nodes)):
         raise ValueError("adjacency shape must match nodes")
-    state = np.asarray(initial_state, dtype=np.int8).copy()
-    if state.shape != (len(nodes),):
-        raise ValueError("initial_state must match node count")
-    if not np.isin(state, (-1, 1)).all():
-        raise ValueError("initial_state must contain only +/-1 values")
+    matrix = _prepare_matrix(adjacency, model)
+    state = _prepare_state(initial_state, len(nodes))
 
     contrarian_set = set(contrarians)
     if not set(nodes).issuperset(contrarian_set):
@@ -91,19 +92,18 @@ def simulate_ico(
     )
     state[fixed] = 1
 
-    history = [state.copy()]
+    seen = {np.packbits(state > 0).tobytes(): 0}
     for step in range(1, max_steps + 1):
-        votes = state + adjacency @ state
-        updated = np.where(votes > 0, 1, np.where(votes < 0, -1, state)).astype(np.int8)
-        updated[fixed] = 1
-        state = updated
-        history.append(state.copy())
-        attractor = detect_attractor(history)
-        if attractor is not None:
-            stop_reason, period = attractor
-            if stop_reason == "steady_state":
+        state = _step(matrix, state)
+        state[fixed] = 1
+        key = np.packbits(state > 0).tobytes()
+        previous_step = seen.get(key)
+        if previous_step is not None:
+            period = step - previous_step
+            if period == 1:
                 return SimulationResult(state, step, "steady_state")
             return SimulationResult(state, step, "limit_cycle", period)
+        seen[key] = step
     return SimulationResult(state, max_steps, "max_steps")
 
 
@@ -128,24 +128,3 @@ def opinion_cluster_sizes(
     largest = sizes[0] if sizes else 0
     second_largest = sizes[1] if len(sizes) > 1 else 0
     return largest, second_largest
-
-
-def _degree_scores(graph: nx.Graph) -> dict[str, float]:
-    return dict(graph.degree())
-
-
-def _leverage_scores(graph: nx.Graph) -> dict[str, float]:
-    """Compute node leverage centrality on an undirected graph."""
-    degrees = dict(graph.degree())
-    scores: dict[str, float] = {}
-    for node in graph:
-        degree = degrees.get(node, 0)
-        if degree == 0:
-            scores[node] = 0.0
-            continue
-        total = 0.0
-        for neighbor in graph.neighbors(node):
-            neighbor_degree = degrees.get(neighbor, 0)
-            total += (degree - neighbor_degree) / (degree + neighbor_degree)
-        scores[node] = total / degree
-    return scores

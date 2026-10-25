@@ -62,7 +62,7 @@ def test_opposing_cluster_size_tracks_the_largest_negative_component() -> None:
     assert opposing_cluster_size(graph, ("a", "b", "c", "d", "e"), state) == 3
 
 
-def test_run_intervention_sweep_records_cluster_decay() -> None:
+def test_run_intervention_sweep_records_cluster_decay(centrality_scores) -> None:
     graph = nx.path_graph(4)
     graph = nx.relabel_nodes(graph, {0: "a", 1: "b", 2: "c", 3: "d"})
     nodes = ("a", "b", "c", "d")
@@ -72,6 +72,7 @@ def test_run_intervention_sweep_records_cluster_decay() -> None:
     results = run_intervention_sweep(
         graph,
         network,
+        scores=centrality_scores(graph),
         budgets=(0.25,),
         initial_negative_fraction=0.5,
         realizations=1,
@@ -85,7 +86,7 @@ def test_run_intervention_sweep_records_cluster_decay() -> None:
     assert set(results["strategy"]) == {"random", "degree", "leverage"}
 
 
-def test_intervention_starts_from_shared_settled_baseline(monkeypatch):
+def test_intervention_starts_from_shared_settled_baseline(monkeypatch, centrality_scores):
     import mdacn.experiments as experiments
 
     graph = nx.path_graph(["a", "b", "c", "d"])
@@ -103,6 +104,7 @@ def test_intervention_starts_from_shared_settled_baseline(monkeypatch):
     results = run_intervention_sweep(
         graph,
         network,
+        scores=centrality_scores(graph),
         budgets=(0, 0.25),
         initial_negative_fraction=0.75,
         realizations=1,
@@ -122,7 +124,9 @@ def test_intervention_starts_from_shared_settled_baseline(monkeypatch):
 @pytest.mark.parametrize(
     ("max_steps", "expected_status"), [(0, "max_steps"), (1, "max_steps"), (20, "limit_cycle")]
 )
-def test_intervention_rejects_nonsteady_baseline(monkeypatch, max_steps, expected_status):
+def test_intervention_rejects_nonsteady_baseline(
+    monkeypatch, max_steps, expected_status, centrality_scores
+):
     import mdacn.experiments as experiments
 
     graph = nx.complete_bipartite_graph(3, 3)
@@ -141,6 +145,7 @@ def test_intervention_rejects_nonsteady_baseline(monkeypatch, max_steps, expecte
         run_intervention_sweep(
             graph,
             network,
+            scores=centrality_scores(graph),
             budgets=(0.25,),
             initial_negative_fraction=0.5,
             realizations=1,

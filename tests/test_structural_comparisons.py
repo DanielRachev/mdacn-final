@@ -9,7 +9,13 @@ import pandas as pd
 import pytest
 from scipy.sparse import load_npz
 
-from mdacn.data import DATASET_URLS, build_matrices, download_dataset, load_interactions
+from mdacn.data import (
+    DATASET_URLS,
+    build_matrices,
+    download_dataset,
+    load_interactions,
+    load_matrices,
+)
 from mdacn.extraction_comparison import compare_extractions
 from mdacn.link_comparison import compare_link_sources
 
@@ -68,6 +74,9 @@ def test_extractions_export_membership_signs_and_retention(
     for label in rows:
         graph = nx.read_graphml(processed / label / "core.graphml")
         network = build_matrices(graph)
+        saved = load_matrices(processed / label / "core.graphml")
+        assert saved.nodes == network.nodes
+        assert (saved.signed != network.signed).nnz == 0
         assert json.loads((processed / label / "nodes.json").read_text()) == list(network.nodes)
         assert (load_npz(processed / label / "signed.npz") != network.signed).nnz == 0
         assert (load_npz(processed / label / "unsigned.npz") != network.unsigned).nnz == 0
@@ -163,17 +172,26 @@ def test_title_download_uses_title_url_and_reuses_existing_file(
 
 
 @pytest.mark.parametrize("dataset", ["body", "title"])
+@pytest.mark.parametrize("override", [False, True])
 def test_setup_selects_dataset_default_path(
     dataset: str,
+    override: bool,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from mdacn import __main__ as cli
+    from mdacn import workflow
 
     calls = []
-    monkeypatch.setattr(cli, "download_dataset", lambda path, **kw: calls.append((path, kw)))
-    monkeypatch.setattr("sys.argv", ["mdacn", "setup", "--dataset", dataset])
+    monkeypatch.setattr(workflow, "download_dataset", lambda path, **kw: calls.append((path, kw)))
+    monkeypatch.setitem(cli.config.PATHS, "dataset", str(tmp_path / "body.tsv"))
+    monkeypatch.setitem(cli.config.PATHS, "title_dataset", str(tmp_path / "title.tsv"))
+    args = ["mdacn", "setup", "--dataset", dataset]
+    if override:
+        args += ["--output", str(tmp_path / "custom.tsv")]
+    monkeypatch.setattr("sys.argv", args)
     cli.main()
-    expected = cli.DEFAULT_DATASET_PATH if dataset == "body" else cli.DEFAULT_TITLE_PATH
+    expected = tmp_path / ("custom.tsv" if override else f"{dataset}.tsv")
     assert calls == [(expected, {"dataset": dataset})]
 
 

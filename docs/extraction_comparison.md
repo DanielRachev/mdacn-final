@@ -151,11 +151,13 @@ regenerate aggregates, cores, matrices, centralities, and experiments together.
 ## Handoff to Georgi
 
 Each configuration has `core.graphml`, `unsigned.npz`, `signed.npz`,
-`communities.csv`, and `nodes.json` under
+`network_metadata.json`, `communities.csv`, and `nodes.json` under
 `data/processed/extraction_comparison/<configuration>/`. Its results directory
 contains `metrics.json` with input checksum, extraction settings, seed, node-file
 checksum, output location, and measurements. Empty selections export empty
 graphs/matrices, status `empty`, and missing unsupported metrics.
+The network metadata associates the graph with its matrix and node-order
+checksums, allowing the existing simulation stages to load each export directly.
 
 ```python
 import json
