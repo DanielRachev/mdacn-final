@@ -100,7 +100,7 @@ def run_stage(stage: str, **overrides) -> None:
         options = {
             "input_path": paths["dataset"],
             "processed_dir": paths["processed"],
-            "results_dir": paths["results"],
+            "results_dir": paths["topology"],
             **config.CHARACTERISATION,
             **overrides,
         }

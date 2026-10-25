@@ -49,7 +49,7 @@ def main() -> None:
         default=Path(config.PATHS["processed_dir"]),
     )
     characterisation.add_argument(
-        "--results-dir", type=Path, default=Path(config.PATHS["results_dir"])
+        "--results-dir", type=Path, default=config.stage_paths()["topology"]
     )
 
     simulation_commands = {

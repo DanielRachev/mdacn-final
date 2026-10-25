@@ -17,7 +17,7 @@ CHARACTERISATION = {
 
 # Shared defaults for NCO, sign shuffling, and node-impact simulations.
 SIMULATION = {
-    "fractions": [i / 10 for i in range(1, 10)],
+    "fractions": [i / 50 for i in range(1, 51)],
     "realizations": 20,
     "seed": 0,
     "max_steps": 1000,
@@ -51,6 +51,7 @@ def stage_paths() -> dict:
         "dataset": Path(PATHS["dataset"]),
         "processed": processed,
         "results": results,
+        "topology": results / "topology",
         **processed_paths(processed),
         "nco": results / "nco",
         "sign-shuffle": results / "sign_shuffle",

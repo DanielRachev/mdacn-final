@@ -8,15 +8,23 @@ import pandas as pd
 
 from mdacn.artifacts import checksum, write_json
 from mdacn.data import load_graph, load_matrices
-from mdacn.experiments import run_fraction_sweep, run_sign_shuffle_fraction_sweep
-from mdacn.plots import plot_phase_transition, plot_sign_shuffle_phase_transition
+from mdacn.experiments import (
+    DEFAULT_FRACTIONS,
+    run_fraction_sweep,
+    run_sign_shuffle_fraction_sweep,
+)
+from mdacn.plots import (
+    plot_opinion_gcc,
+    plot_phase_transition,
+    plot_sign_shuffle_phase_transition,
+)
 
 
 def run_nco_experiment(
     graph_path: Path,
     *,
     results_dir: Path = Path("results/nco"),
-    fractions: tuple[float, ...] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
+    fractions: tuple[float, ...] = DEFAULT_FRACTIONS,
     realizations: int = 20,
     seed: int = 0,
     max_steps: int = 1000,
@@ -60,7 +68,7 @@ def run_sign_shuffle_experiment(
     graph_path: Path,
     *,
     results_dir: Path = Path("results/sign_shuffle"),
-    fractions: tuple[float, ...] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
+    fractions: tuple[float, ...] = DEFAULT_FRACTIONS,
     realizations: int = 20,
     seed: int = 0,
     max_steps: int = 1000,
@@ -111,8 +119,10 @@ def run_sign_shuffle_experiment(
 
 
 def _clear_reports(results_dir: Path, summary: str, figure: str) -> None:
-    for name in (f"{summary}.csv", f"{figure}.png", f"{figure}.pdf"):
-        (results_dir / name).unlink(missing_ok=True)
+    (results_dir / f"{summary}.csv").unlink(missing_ok=True)
+    for stem in (figure, "opinion_gcc_phase_transition", "positive_opinion_gcc_phase_transition"):
+        for extension in ("png", "pdf"):
+            (results_dir / f"{stem}.{extension}").unlink(missing_ok=True)
 
 
 def save_nco_reports(results_dir: Path, *, sign_shuffle: bool = False) -> None:
@@ -127,6 +137,14 @@ def save_nco_reports(results_dir: Path, *, sign_shuffle: bool = False) -> None:
         mean_initial_negative_fraction=("initial_negative_fraction", "mean"),
         mean_final_negative_fraction=("final_negative_fraction", "mean"),
         std_final_negative_fraction=("final_negative_fraction", "std"),
+        mean_g_minus=("g_minus", "mean"),
+        std_g_minus=("g_minus", "std"),
+        mean_g_plus=("g_plus", "mean"),
+        std_g_plus=("g_plus", "std"),
+        mean_g_minus_second=("g_minus_second", "mean"),
+        std_g_minus_second=("g_minus_second", "std"),
+        mean_g_plus_second=("g_plus_second", "mean"),
+        std_g_plus_second=("g_plus_second", "std"),
         mean_steps=("steps", "mean"),
     )
     summary["run_fraction"] = summary["runs"] / metadata["realizations"]
@@ -134,3 +152,9 @@ def save_nco_reports(results_dir: Path, *, sign_shuffle: bool = False) -> None:
     plot = plot_sign_shuffle_phase_transition if sign_shuffle else plot_phase_transition
     for extension in ("png", "pdf"):
         plot(results, results_dir / f"{figure}.{extension}")
+        plot_opinion_gcc(results, results_dir / f"opinion_gcc_phase_transition.{extension}")
+        plot_opinion_gcc(
+            results,
+            results_dir / f"positive_opinion_gcc_phase_transition.{extension}",
+            opinion="plus",
+        )

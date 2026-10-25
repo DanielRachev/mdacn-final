@@ -92,6 +92,8 @@ def test_full_pipeline_and_individual_stages_produce_same_saved_runs(project, mo
         pd.read_csv(project["features"])[original_scores.columns], original_scores, check_like=True
     )
     assert project["features"].is_file() and project["feature_metadata"].is_file()
+    assert (project["topology"] / "metrics.json").is_file()
+    assert (project["topology"] / "core_layout.csv").is_file()
     artifacts = [
         project["nco"] / "fraction_sweep.csv",
         project["sign-shuffle"] / "sign_shuffle_sweep.csv",
@@ -102,11 +104,17 @@ def test_full_pipeline_and_individual_stages_produce_same_saved_runs(project, mo
     assert (project["nco"] / "fraction_summary.csv").is_file()
     assert (project["sign-shuffle"] / "sign_shuffle_phase_transition.png").is_file()
     assert (project["node-impact"] / "study/analysis/correlations.csv").is_file()
+    for stage in ("nco", "sign-shuffle"):
+        for name in ("opinion_gcc_phase_transition", "positive_opinion_gcc_phase_transition"):
+            assert (project[stage] / f"{name}.png").is_file()
     for stage in workflow.STAGES[:-1]:
         workflow.run_stage(stage)
     assert [path.read_bytes() for path in sources] == original_files
     assert not (project["nco"] / "fraction_summary.csv").exists()
     assert not (project["node-impact"] / "study/analysis").exists()
+    for stage in ("nco", "sign-shuffle"):
+        for name in ("opinion_gcc_phase_transition", "positive_opinion_gcc_phase_transition"):
+            assert not (project[stage] / f"{name}.png").exists()
     for path, frame in zip(artifacts, expected, strict=True):
         pd.testing.assert_frame_equal(pd.read_csv(path), frame)
     before = [path.read_bytes() for path in artifacts]

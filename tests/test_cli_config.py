@@ -108,7 +108,7 @@ def test_characterise_uses_project_paths_and_extraction_settings(monkeypatch, ov
     path, options = calls[0]
     assert path == Path("custom/body.tsv")
     assert options["processed_dir"] == Path("custom/core")
-    assert options["results_dir"] == Path("custom/results")
+    assert options["results_dir"] == Path("custom/results/topology")
     assert (options["core_method"], options["k"], options["min_interactions"], options["seed"]) == (
         ("k_core", 12, 70, 22) if override else ("activity_lcc", 8, 55, 11)
     )

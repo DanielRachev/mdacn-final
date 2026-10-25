@@ -88,6 +88,18 @@ settings use `SIMULATION`. `reports` reads its saved results without rerunning i
 one empirical/shuffled pair. The sweep reuses the core topology to avoid copying
 the graph for each realization.
 
+NCO, sign-shuffle, and ICO use the same 50-point fraction grid: 0.02 to 1.00 in
+steps of 0.02. Set `--fractions` to supply another grid. Seeds are assigned by
+recorded fraction order, then realization; changing the grid changes which
+initial seeds are assigned to shared fraction points.
+
+Sign shuffling also saves the largest and second-largest components for each
+opinion, measured on the fixed unsigned core and divided by the full core size.
+Its component figures show individual runs, means, and fragmentation, with
+steady states, cycles, and update-limit outcomes separated. Initial states are
+paired within each experiment; sign shuffling retains its original seed schedule,
+which differs from the unsigned/signed baseline even with the same root seed.
+
 ## Data and methods
 
 - Undirected aggregation merges both directions and removes self-links.
@@ -112,10 +124,12 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 | `data/processed/centrality.csv`, `centrality.json` | Existing centrality scores, raw degrees, and input/output checksums. |
 | `data/processed/communities.csv` | Node community labels. |
 | `data/processed/node_features.csv`, `node_features.json` | Node scores and graph/input checksums for reuse by later stages. |
-| `results/metrics.json` | Network metrics and input metadata. |
-| `results/degree_distribution.csv`, `degree_fits.csv`, `degree_distribution.pdf` | Degree distribution, fits, and figure. |
-| `results/nco/` | Simulation results, summaries, figures, and metadata. |
-| `results/sign_shuffle/` | Sign-shuffle results, summaries, PNG/PDF figures, metadata, and node order. |
+| `results/topology/metrics.json` | Network metrics, input metadata, and layout settings. |
+| `results/topology/degree_distribution.csv`, `degree_fits.csv`, `degree_distribution.png`, `.pdf` | Core degree distribution, descriptive fits, and figures. |
+| `results/topology/aggregate_degree_distribution.csv`, `degree_comparison.png`, `.pdf` | Full aggregate degrees and comparison with the selected core. |
+| `results/topology/core_layout.csv`, `core_communities.png`, `.pdf` | Full-core layout coordinates, community labels, and figures. |
+| `results/nco/` | Simulation results, raw-fraction and opinion-component summaries/figures, and metadata. |
+| `results/sign_shuffle/` | Sign-shuffle results, component summaries/figures, metadata, and node order. |
 | `results/ico/` | `intervention_sweep.csv`, run settings and node order; `reports` adds `intervention_summary.csv` and comparison PNGs per initial fraction. |
 | `results/node_impact/` | Run config and `study/` containing frozen core features, paired outcomes, and `analysis/`. |
 

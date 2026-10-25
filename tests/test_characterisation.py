@@ -156,3 +156,12 @@ def test_pipeline_exports_loadable_artifacts(body_tsv: Path, tmp_path: Path) -> 
     assert json.loads((results / "metrics.json").read_text()) == summary
     assert graph.graph["input_sha256"] == summary["input"]["sha256"]
     assert (results / "degree_distribution.pdf").stat().st_size > 0
+    aggregate_degrees = pd.read_csv(results / "aggregate_degree_distribution.csv")
+    assert aggregate_degrees["count"].sum() == len(aggregate)
+    assert aggregate_degrees["probability"].sum() == pytest.approx(1)
+    layout = pd.read_csv(results / "core_layout.csv")
+    assert layout["node"].tolist() == nodes
+    assert layout["community"].tolist() == [graph.nodes[node]["community"] for node in nodes]
+    for name in ("degree_comparison", "core_communities"):
+        for extension in ("png", "pdf"):
+            assert (results / f"{name}.{extension}").stat().st_size > 0
