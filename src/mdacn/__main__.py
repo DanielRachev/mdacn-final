@@ -1,154 +1,112 @@
-"""Commands: python -m mdacn setup / characterise / nco / sign-shuffle / rewire / rewire-ico."""
+"""Command-line entry points for preprocessing, dynamics, and impact analysis."""
 
 import argparse
 from pathlib import Path
 
-from mdacn.data import download_dataset
-from mdacn.experiments import DEFAULT_FRACTIONS
-from mdacn.nco_pipeline import run_nco_experiment, run_sign_shuffle_experiment
-from mdacn.pipeline import characterise
-from mdacn.rewiring_pipeline import (
-    DEFAULT_BETAS,
-    DEFAULT_BUDGETS,
-    default_specs,
-    run_rewired_ico_experiment,
-    run_rewiring_experiment,
-)
+import matplotlib
 
-DEFAULT_DATASET_PATH = Path("data/raw/soc-RedditHyperlinks-body.tsv")
+from mdacn import config
+from mdacn.workflow import run_project, run_stage
 
 
 def main() -> None:
+    matplotlib.use("Agg")  # Commands save figures to files; no GUI is needed.
     parser = argparse.ArgumentParser(
         prog="python -m mdacn", description="MDACN Project Reddit Graph Echo Chamber"
     )
 
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("run", help="Run all implemented project stages using config.py")
     setup = commands.add_parser("setup", help="Download the SNAP body TSV; keep an existing file")
-    setup.add_argument("--output", type=Path, default=DEFAULT_DATASET_PATH)
+    setup.add_argument("--output", type=Path, default=Path(config.PATHS["dataset"]))
 
-    analysis = commands.add_parser(
+    characterisation = commands.add_parser(
         "characterise", help="Save aggregate/core graphs, metrics, and plots"
     )
-    analysis.add_argument("--input", type=Path, default=DEFAULT_DATASET_PATH)
-    analysis.add_argument("--core-method", choices=("k_core", "activity_lcc"), default="k_core")
-    analysis.add_argument(
-        "--k", type=int, default=10, help="Minimum degree within the k-core (default: 10)"
+    characterisation.add_argument("--input", type=Path, default=Path(config.PATHS["dataset"]))
+    characterisation.add_argument(
+        "--core-method",
+        choices=("k_core", "activity_lcc"),
+        default=config.CHARACTERISATION["core_method"],
     )
-    analysis.add_argument(
+    characterisation.add_argument(
+        "--k",
+        type=int,
+        default=config.CHARACTERISATION["k"],
+        help="Minimum degree within the k-core",
+    )
+    characterisation.add_argument(
         "--min-interactions",
         type=int,
-        default=100,
-        help="Original activity threshold (default: 100)",
+        default=config.CHARACTERISATION["min_interactions"],
+        help="Original activity threshold",
     )
-    analysis.add_argument("--seed", type=int, default=42)
-    analysis.add_argument(
-        "--processed-dir", "--processed_dir", type=Path, default=Path("data/processed")
-    )
-    analysis.add_argument("--results-dir", type=Path, default=Path("results/topology"))
-
-    nco = commands.add_parser("nco", help="Compare unsigned and signed NCO on the saved core")
-    nco.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
-    nco.add_argument("--results-dir", type=Path, default=Path("results/nco"))
-    nco.add_argument(
-        "--fractions",
-        type=float,
-        nargs="+",
-        default=DEFAULT_FRACTIONS,
-        help="Initial negative fractions; default is 0.02 to 1.00 in steps of 0.02",
-    )
-    nco.add_argument("--realizations", type=int, default=20)
-    nco.add_argument("--seed", type=int, default=0)
-    nco.add_argument("--max-steps", type=int, default=1000)
-
-    sign_shuffle = commands.add_parser(
-        "sign-shuffle", help="Compare empirical signed NCO against sign-shuffled null model"
-    )
-    sign_shuffle.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
-    sign_shuffle.add_argument("--results-dir", type=Path, default=Path("results/sign_shuffle"))
-    sign_shuffle.add_argument(
-        "--fractions",
-        type=float,
-        nargs="+",
-        default=DEFAULT_FRACTIONS,
-        help="Initial negative fractions; default is 0.02 to 1.00 in steps of 0.02",
-    )
-    sign_shuffle.add_argument("--realizations", type=int, default=20)
-    sign_shuffle.add_argument("--seed", type=int, default=0)
-    sign_shuffle.add_argument("--max-steps", type=int, default=1000)
-
-    rewiring = commands.add_parser(
-        "rewire", help="Export degree-preserving rewired graphs (reference, insular, integrated)"
-    )
-    rewiring.add_argument("--graph", type=Path, default=Path("data/processed/core.graphml"))
-    rewiring.add_argument("--nodes", type=Path, default=Path("data/processed/nodes.json"))
-    rewiring.add_argument(
-        "--centrality",
-        type=Path,
-        default=Path("data/processed/centrality.csv"),
-        help="Saved empirical scores; computed once and saved if missing",
-    )
-    rewiring.add_argument(
-        "--metrics",
-        type=Path,
-        default=Path("results/topology/metrics.json"),
-        help="Saved core metrics for the empirical assortativity",
-    )
-    rewiring.add_argument("--results-dir", type=Path, default=Path("results/rewiring"))
-    rewiring.add_argument("--replicates", type=int, default=5)
-    rewiring.add_argument(
-        "--attempts-per-edge", type=int, default=100, help="Maximum attempts per edge"
-    )
-    rewiring.add_argument(
-        "--window-per-edge", type=float, default=2.0, help="Convergence window; 0 disables"
-    )
-    rewiring.add_argument(
-        "--tolerance", type=float, default=0.002, help="Allowed score change per window"
-    )
-    for target in ("insular", "integrated"):
-        rewiring.add_argument(
-            f"--{target}-betas",
-            type=float,
-            nargs="+",
-            default=DEFAULT_BETAS[target],
-            help=f"Metropolis betas for the {target} target",
-        )
-    rewiring.add_argument("--checkpoints", type=int, default=20)
-    rewiring.add_argument("--seed", type=int, default=0)
-
-    rewired_ico = commands.add_parser(
-        "rewire-ico", help="Compare signed ICO Phi_c on the empirical and rewired graphs"
-    )
-    rewired_ico.add_argument(
+    characterisation.add_argument("--seed", type=int, default=config.CHARACTERISATION["seed"])
+    characterisation.add_argument(
         "--processed-dir",
+        "--processed_dir",
         type=Path,
-        default=Path("data/processed"),
-        help="Saved empirical unsigned.npz, signed.npz, and nodes.json",
+        default=Path(config.PATHS["processed_dir"]),
     )
-    rewired_ico.add_argument("--rewired-dir", type=Path, default=Path("results/rewiring"))
-    rewired_ico.add_argument("--results-dir", type=Path, default=Path("results/rewiring_ico"))
-    rewired_ico.add_argument("--budgets", type=float, nargs="+", default=DEFAULT_BUDGETS)
-    rewired_ico.add_argument("--f", type=float, default=0.5, help="Initial negative fraction")
-    rewired_ico.add_argument("--initializations", type=int, default=20)
-    rewired_ico.add_argument(
-        "--strategies",
-        nargs="+",
-        choices=("degree", "random", "leverage"),
-        default=("degree", "random"),
+    characterisation.add_argument(
+        "--results-dir", type=Path, default=config.stage_paths()["topology"]
     )
-    rewired_ico.add_argument("--seed", type=int, default=0)
-    rewired_ico.add_argument("--max-steps", type=int, default=1000)
+
+    simulation_commands = {
+        "nco": "Compare unsigned and signed NCO on the saved core",
+        "sign-shuffle": "Compare empirical signed NCO against a sign-shuffled null model",
+        "ico": "Run existing random, degree, and leverage ICO interventions",
+    }
+    paths = config.stage_paths()
+    for name, help_text in simulation_commands.items():
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("--graph", type=Path, default=paths["core"])
+        command.add_argument("--results-dir", type=Path, default=paths[name])
+        command.add_argument(
+            "--fractions", type=float, nargs="+", default=config.SIMULATION["fractions"]
+        )
+        command.add_argument("--realizations", type=int, default=config.SIMULATION["realizations"])
+        command.add_argument("--seed", type=int, default=config.SIMULATION["seed"])
+        command.add_argument("--max-steps", type=int, default=config.SIMULATION["max_steps"])
+        if name == "ico":
+            command.add_argument("--budgets", type=float, nargs="+", default=config.ICO["budgets"])
+
+    configured = {
+        "rewire": (
+            "Export degree-preserving rewired graphs (reference, insular, integrated)",
+            config.REWIRING,
+            {"--graph": paths["core"], "--metrics": paths["topology"] / "metrics.json"},
+        ),
+        "rewire-ico": (
+            "Compare signed ICO Phi_c on the empirical and rewired graphs",
+            config.REWIRED_ICO,
+            {"--processed-dir": paths["processed"], "--rewired-dir": paths["rewire"]},
+        ),
+    }
+    for name, (help_text, settings, inputs) in configured.items():
+        command = commands.add_parser(name, help=help_text)
+        for flag, default in inputs.items():
+            command.add_argument(flag, type=Path, default=default)
+        command.add_argument("--results-dir", type=Path, default=paths[name])
+        _add_setting_options(command, settings)
+
+    commands.add_parser("centrality", help="Calculate and save the existing core centrality scores")
+    commands.add_parser("features", help="Save node scores for subsequent experiments")
+    commands.add_parser("node-impact", help="Run paired interventions using saved node scores")
+    commands.add_parser(
+        "reports", help="Save summaries, impact statistics, and plots from stored results"
+    )
 
     args = parser.parse_args()
     try:
-        if args.command == "setup":
-            exists = args.output.is_file()
-            print(f"{'Using existing' if exists else 'Downloading'}")
-            download_dataset(args.output)
-            print(f"Dataset ready: {args.output}")
+        if args.command == "run":
+            run_project()
+        elif args.command == "setup":
+            run_stage("setup", output=args.output)
         elif args.command == "characterise":
-            characterise(
-                args.input,
+            run_stage(
+                "characterise",
+                input_path=args.input,
                 core_method=args.core_method,
                 k=args.k,
                 min_interactions=args.min_interactions,
@@ -156,62 +114,76 @@ def main() -> None:
                 processed_dir=args.processed_dir,
                 results_dir=args.results_dir,
             )
-        elif args.command == "nco":
-            run_nco_experiment(
-                args.graph,
+        elif args.command in simulation_commands:
+            run_stage(
+                args.command,
+                graph_path=args.graph,
                 results_dir=args.results_dir,
                 fractions=tuple(args.fractions),
                 realizations=args.realizations,
                 seed=args.seed,
                 max_steps=args.max_steps,
+                **({"budgets": tuple(args.budgets)} if args.command == "ico" else {}),
             )
-        elif args.command == "sign-shuffle":
-            run_sign_shuffle_experiment(
-                args.graph,
+        elif args.command in configured:
+            _, settings, inputs = configured[args.command]
+            run_stage(
+                args.command,
+                **{_keyword(flag): getattr(args, _attribute(flag)) for flag in inputs},
                 results_dir=args.results_dir,
-                fractions=tuple(args.fractions),
-                realizations=args.realizations,
-                seed=args.seed,
-                max_steps=args.max_steps,
-            )
-        elif args.command == "rewire":
-            run_rewiring_experiment(
-                args.graph,
-                nodes_path=args.nodes,
-                centrality_path=args.centrality,
-                metrics_path=args.metrics,
-                results_dir=args.results_dir,
-                specs=default_specs(
-                    {
-                        "insular": tuple(args.insular_betas),
-                        "integrated": tuple(args.integrated_betas),
-                    }
-                ),
-                replicates=args.replicates,
-                attempts_per_edge=args.attempts_per_edge,
-                window_per_edge=args.window_per_edge,
-                tolerance=args.tolerance,
-                seed=args.seed,
-                checkpoints=args.checkpoints,
-                show_progress=True,
-            )
-        elif args.command == "rewire-ico":
-            run_rewired_ico_experiment(
-                args.processed_dir,
-                rewired_dir=args.rewired_dir,
-                results_dir=args.results_dir,
-                budgets=tuple(args.budgets),
-                negative_fraction=args.f,
-                initializations=args.initializations,
-                strategies=tuple(args.strategies),
-                seed=args.seed,
-                max_steps=args.max_steps,
-                show_progress=True,
+                **_setting_values(args, settings),
             )
         else:
-            print(f"Unknown command supplied: {args.command}")
+            run_stage(args.command)
     except Exception as error:
         parser.exit(1, f"{parser.prog}: {error}\n")
+
+
+def _attribute(flag: str) -> str:
+    """Return the argparse attribute that stores a flag's value."""
+    return flag.removeprefix("--").replace("-", "_")
+
+
+def _keyword(flag: str) -> str:
+    """Return the stage keyword for an input flag; file inputs end in _path."""
+    name = _attribute(flag)
+    return f"{name}_path" if name in ("graph", "metrics", "input") else name
+
+
+def _add_setting_options(command: argparse.ArgumentParser, settings: dict) -> None:
+    """Add one option per config setting, defaulting to its config value.
+
+    Lists take several values; a dict of lists such as betas becomes one option
+    per key, e.g. --insular-betas.
+    """
+    for name, default in settings.items():
+        if isinstance(default, dict):
+            for key, values in default.items():
+                command.add_argument(
+                    f"--{key}-{name}".replace("_", "-"),
+                    dest=f"{key}_{name}",
+                    type=type(values[0]),
+                    nargs="+",
+                    default=values,
+                )
+        elif isinstance(default, list):
+            command.add_argument(
+                f"--{name}".replace("_", "-"), type=type(default[0]), nargs="+", default=default
+            )
+        else:
+            command.add_argument(f"--{name}".replace("_", "-"), type=type(default), default=default)
+
+
+def _setting_values(args: argparse.Namespace, settings: dict) -> dict:
+    """Collect parsed config options back into the shape of their config entry."""
+    return {
+        name: (
+            {key: getattr(args, f"{key}_{name}") for key in default}
+            if isinstance(default, dict)
+            else getattr(args, name)
+        )
+        for name, default in settings.items()
+    }
 
 
 if __name__ == "__main__":

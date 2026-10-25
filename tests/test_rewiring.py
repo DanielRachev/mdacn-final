@@ -13,6 +13,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from scipy.sparse import load_npz, save_npz
 
+from mdacn.centrality_pipeline import save_centrality_scores
 from mdacn.data import build_matrices, export_graph
 from mdacn.evaluation import compute_opinion_gcc
 from mdacn.rewiring import (
@@ -399,10 +400,11 @@ def test_pipeline_rejects_mismatched_nodes(tmp_path):
 
 
 def test_rewire_cli(tmp_path):
-    _, graph_path, nodes_path = write_inputs(tmp_path)
+    _, graph_path, _ = write_inputs(tmp_path)
+    # The CLI reads the centrality stage's export beside the graph, as other stages do.
+    save_centrality_scores(graph_path)
     command = [sys.executable, "-m", "mdacn", "rewire", "--graph", str(graph_path)]
-    command += ["--nodes", str(nodes_path), "--results-dir", str(tmp_path / "rw")]
-    command += ["--centrality", str(tmp_path / "c.csv"), "--metrics", str(tmp_path / "m.json")]
+    command += ["--results-dir", str(tmp_path / "rw"), "--metrics", str(tmp_path / "m.json")]
     command += ["--replicates", "1", "--attempts-per-edge", "2"]
     command += ["--insular-betas", "1", "--integrated-betas", "1", "2"]
     subprocess.run(command, check=True, capture_output=True)
