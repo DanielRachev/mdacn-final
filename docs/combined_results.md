@@ -121,10 +121,10 @@ Run on 26 October 2026 against the default connected 10-core, with the ICO
 sweep at `f = 0.3, 0.4, 0.5, 0.6, 0.7` and all seven strategies.
 
 **Available:** NCO, sign-shuffle, ICO, sensitivity, the extraction comparison,
-and a local temporal reproduction. Eleven inputs were present.
+node-impact, and a local temporal reproduction. Fourteen inputs were present.
 
-**Missing:** node-impact, rewiring, label audit, directed roles, and incident
-signs. Nine entries are listed in `inputs.json` and `warnings.txt`.
+**Missing:** rewiring, label audit, directed roles, and incident signs. Six
+entries are listed in `inputs.json` and `warnings.txt`.
 
 The available results:
 
@@ -165,9 +165,25 @@ The available results:
     effects are at `f = 0.5`. The minority-LCC difference at `f = 0.5` is not
     distinguishable from zero.
 
-The combined report and deck still need the node-impact and rewiring sections
-and the PR13 diagnostics. Their paths are named in `inputs.json`, so they can be
-added without changing the command.
+- The node-impact reproduction used all 2,896 core nodes, 20 realisations, and
+  locally derived `incident_signs.csv` and `temporal_activity.csv` files. At
+  `f = 0.5`, signed model, the strongest Pearson correlation with mean impact is
+  the negative incident ratio at -0.232 (95% interval -0.253 to -0.145), followed
+  by degree at -0.155 (-0.238 to -0.053), betweenness at -0.134 (-0.217 to
+  -0.033), and temporal activity at -0.119 (-0.207 to -0.015). Signed leverage
+  is -0.058 with an interval of -0.117 to 0.002, leverage is +0.010 with an
+  interval that includes zero, and the signed bridge ratio is -0.065 with an
+  interval that includes zero. The unsigned model has no strong Pearson
+  correlation; leverage is +0.108 and the signed bridge ratio is -0.145, both
+  with intervals that include zero.
+- The node-impact regression has an R squared of 0.101 for the signed model and
+  0.060 for the unsigned model. The mean impact scale is small, about 0.0004 for
+  the top nodes, and many `f = 0.5` baselines are already fragmented. The
+  structural predictors are weak.
+
+The combined report and deck still need the rewiring section and the PR13
+diagnostics: label audit, directed roles, and incident signs. Their paths are
+named in `inputs.json`, so they can be added without changing the command.
 
 ## Interpretation
 
