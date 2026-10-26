@@ -62,7 +62,20 @@ def stage_paths() -> dict:
     }
 
 
-ICO = {"budgets": [0.0, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25]}
+ICO = {
+    "budgets": [0.0, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25],
+    "models": ["unsigned", "signed"],
+    "strategies": [
+        "random",
+        "degree",
+        "betweenness",
+        "eigenvector",
+        "leverage",
+        "signed_leverage",
+        "temporal_bridge",
+    ],
+    "phi_c_threshold": 0.5,
+}
 
 
 # Node-impact overrides and settings specific to that workflow.
