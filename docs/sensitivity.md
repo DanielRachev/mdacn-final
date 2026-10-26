@@ -40,7 +40,14 @@ For every configuration:
 
 The default ICO subset is `random`, `degree`, and `leverage`. The proposed
 `signed_leverage` and `temporal_bridge` strategies can be added with
-`--strategies`; the score files are already exported for every core.
+`--strategies`; the score files are already exported for every core. The
+measured all-seven comparison used:
+
+```bash
+uv run python -m mdacn sensitivity \
+  --strategies random degree betweenness eigenvector leverage signed_leverage temporal_bridge \
+  --skip-nco
+```
 
 ## Command
 
@@ -76,6 +83,7 @@ Under `results/sensitivity/`:
 | `ico_stop_reasons.csv` | Stop-reason counts for the ICO sweep |
 | `phi_c.csv` | Per-run and aggregated critical budget per configuration, model, fraction, and strategy |
 | `headline.csv` | One row per configuration with selected NCO and ICO outcomes |
+| `strategy_ranking.csv` | Strategies ranked by paired delta at `Phi = 0.05`, 0.1, and 0.25 |
 | `metadata.json` | Settings, core checksums, and versions |
 | `nco_g_minus_by_configuration.png` | Opposing cluster fraction against `f`, one line per core |
 | `nco_g_plus_by_configuration.png` | Positive cluster fraction against `f` |
@@ -110,39 +118,70 @@ unsigned, inside the realisation spread.
 
 ### ICO
 
-| Configuration | Degree delta at `Phi = 0.05`, signed | Degree delta at `Phi = 0.05`, unsigned | First strong budget |
-| --- | ---: | ---: | ---: |
-| `k_core_8` | -0.424 | -0.333 | 0.05 |
-| `k_core_10` | -0.561 | -0.610 | 0.05 |
-| `k_core_12` | -0.517 | -0.566 | 0.05 |
-| `activity_lcc_100` | -0.042 | -0.039 | 0.10 |
+The all-seven run produced 7,840 ICO rows, of which 1,120 are budget-zero
+baselines. All 7,840 reached steady state.
 
-"First strong budget" is the first tested budget with a mean paired
-`delta_g_minus` of at most -0.10. Degree and leverage reach that effect at
-`Phi = 0.05` on the three k-cores and at `Phi = 0.10` on the activity-LCC graph.
-Random targeting needs `Phi = 0.20` to 0.25 in every configuration and reduces
-`g_minus` less. Degree and leverage have nearly identical first crossings;
-leverage is slightly better at larger budgets.
+At `Phi = 0.05`, the six ranked strategies are effectively tied on the three
+k-cores: mean paired `delta_g_minus` lies between -0.333 and -0.562. Random
+reaches only -0.018 to -0.032. On the activity-LCC graph no strategy has a strong
+effect at 0.05: the ranked strategies lie between -0.036 and -0.044, random
+between -0.032 and -0.035. The activity effect appears at 0.10, where the ranked
+strategies reach -0.420 to -0.469.
 
-No run backfired in the 2,880 intervention runs: `delta_g_minus` was never
-positive. The repelled-neighbour share was at most 1.4%, so some neighbours moved
-to -1, but the opposing cluster still shrank overall.
+At `Phi = 0.25`, the ranking is the same on all four cores and both models:
+
+| Rank | Strategy | Mean `delta_g_minus` range |
+| ---: | --- | ---: |
+| 1 | `leverage` | -0.399 to -0.871 |
+| 2 | `betweenness` | -0.396 to -0.867 |
+| 3 | `signed_leverage` | -0.394 to -0.862 |
+| 4 | `degree` | -0.387 to -0.855 |
+| 5 | `temporal_bridge` | -0.385 to -0.850 |
+| 6 | `eigenvector` | -0.381 to -0.848 |
+| 7 | `random` | -0.109 to -0.226 |
+
+Ranks 1 to 6 differ by at most about 0.02. Paired over realisations, leverage is
+ahead of degree by 0.0165 on average at `Phi = 0.25`, and the 95% interval
+excludes zero in all eight core and model groups. That gap is small next to the
+random-versus-ranked gap of about 0.44. At `Phi = 0.05` leverage is only 0.0007
+ahead of degree, so that ranking is not useful beyond random being much worse.
+The order is stable across k = 8, 10, and 12. The activity-LCC graph follows the
+same order but needs a larger budget.
+
+The proposed scores do not show an advantage. `signed_leverage` is slightly
+better than degree at 0.25 (-0.0062 paired) but worse at 0.05 (+0.0196), driven
+by k = 12 unsigned where it is clearly worse: `delta_g_minus` -0.408 against
+-0.566, and `g_minus` 0.190 against 0.032. It recovers by 0.10.
+`temporal_bridge` is indistinguishable from degree at 0.05 and slightly worse at
+0.25 (+0.0032). Neither score reduces the repelled-neighbour share: the largest
+values were leverage 1.18%, betweenness 1.32%, signed leverage 1.36%, temporal
+bridge 1.39%, degree 1.43%, and random 0.42%.
+
+No run backfired in the 6,720 intervention runs: `delta_g_minus` was never
+positive.
 
 ### Phi_c
 
-All k-core runs reached the threshold. Mean `Phi_c` for degree targeting ranges
-from 0.0095 to 0.0195 across the three k-cores, within one budget-grid step. The
-activity-LCC mean is lower but not comparable: many of its runs are already
-below the threshold at `Phi = 0`. Use the first strong budget for that graph.
+All 56 configuration, model, and strategy combinations reached the threshold.
+Mean `Phi_c` is identical for all ranked strategies within a core, 0.0095 to
+0.0195 on the k-cores, except `signed_leverage` on k = 12 unsigned, 0.0180
+against 0.0155. Random is higher, 0.020 to 0.0445 on the k-cores. The
+activity-LCC mean is not comparable because many runs are already below the
+threshold at `Phi = 0`; use the first strong budget there.
 
 ### Verdict
 
 The k = 10 default is not driving the qualitative conclusions. The NCO
-transition, the strategy ranking, and the large 5% degree or leverage effect hold
-for k = 8, 10, and 12. The activity-LCC graph is the exception: it needs a
-larger budget, and its topology and sign composition differ enough that it is
-reported as a stress test. Small differences in the mean at `f = 0.5` and in
-mean `Phi_c` are within realisation uncertainty and the budget grid.
+transition, the ICO strategy ranking, and the budget needed for a strong effect
+hold for k = 8, 10, and 12. The activity-LCC graph is the exception: it needs
+`Phi` about 0.10, and its smaller node set and different selection rule make the
+comparison imperfect, so it is reported as a stress test.
+
+The two proposed scores do not beat the classical strategies. This is a null
+result. Leverage is the best overall at large budgets, with betweenness second;
+signed leverage and the temporal-activity bridge are not better, and signed
+leverage does not reduce the repelled-neighbour share. Report this as measured,
+not as a failed implementation.
 
 ## Interpretation
 
@@ -156,7 +195,8 @@ Compare the four configurations on three levels:
    not comparable because `N` differs; compare fractions.
 3. **ICO outcomes.** Whether the strategy ranking, the opposing cluster
    fraction at a fixed `Phi`, or `Phi_c` changes. `headline.csv` gives a compact
-   selection at `f = 0.5` and `Phi = 0.05, 0.1, 0.25`.
+   selection at `f = 0.5` and `Phi = 0.05, 0.1, 0.25`; `strategy_ranking.csv`
+   gives the full order for every configuration and model.
 
 If the k = 8, 10, and 12 curves overlap within uncertainty and the ranking is
 stable, the k = 10 default is justified for the reported conclusions. If they
@@ -173,8 +213,11 @@ tested range`) visible.
 
 ## Runtime
 
-The default protocol runs 8,000 NCO simulations and 3,360 ICO rows across the
-four cores, of which 480 are budget-zero baselines. The measured run took about
-15 minutes, including the centrality and targeting exports. The betweenness
-export is the main fixed cost per core. Use the skip flags to rerun one half;
-the all-seven ICO subset is roughly twice the ICO work.
+The default three-strategy protocol runs 8,000 NCO simulations and 3,360 ICO
+rows across the four cores, of which 480 are budget-zero baselines. The measured
+run took about 15 minutes, including the centrality and targeting exports. The
+all-seven ICO rerun produced 7,840 rows and took about 25 minutes with
+`--skip-nco`, including the score exports and summaries. The betweenness export
+is the main fixed cost per core. Use the skip flags to rerun one half;
+`--skip-nco --skip-ico` regenerates summaries, the ranking table, and figures
+from saved sweeps without rerunning simulations or score exports.
