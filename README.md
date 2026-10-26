@@ -18,6 +18,7 @@ Or run each stage separately. Config supplies all input and output paths:
 uv run python -m mdacn setup
 uv run python -m mdacn characterise
 uv run python -m mdacn centrality
+uv run python -m mdacn targeting-scores
 uv run python -m mdacn features
 uv run python -m mdacn nco
 uv run python -m mdacn sign-shuffle
@@ -32,6 +33,7 @@ uv run python -m mdacn reports
 | `setup` | Download the body TSV; reuse an existing file. |
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
 | `centrality` | Run the existing degree, betweenness, eigenvector, and leverage implementations and save aligned scores. |
+| `targeting-scores` | Save the proposed signed-leverage and temporal-activity bridge scores used by `ico`. |
 | `features` | Read expected contributor output files, then merge and validate their scores. |
 | `nco` | Save unsigned and signed simulation outcomes on the exported core. |
 | `sign-shuffle` | Save paired empirical/sign-shuffled simulation outcomes. |
@@ -65,18 +67,28 @@ relative to `PATHS["processed_dir"]`. The default files and required columns are
 | File | Columns |
 | --- | --- |
 | `centrality.csv` | `node`, raw-count `degree`, `leverage`, `betweenness` |
-| `signed_leverage.csv` | `node`, `signed_leverage` |
+| `signed_leverage.csv` | `node`, `signed_leverage` (written by `targeting-scores`) |
 | `incident_signs.csv` | `node`, `negative_incident_ratio`, `signed_bridge_ratio` |
 | `temporal_activity.csv` | `node`, `temporal_activity` |
 
 `centrality` also exports normalized `degree_centrality` and `eigenvector`.
-The other three files still come from the pending contributor implementations.
+`targeting-scores` writes `signed_leverage.csv` and the bridge score it consumes
+from `ICO`. The other two files still come from the pending contributor
+implementations.
 All seven impact scores are required for every core node.
 The `features` stage writes the shared score table consumed by `node-impact`.
 Scores are kept unchanged. Missing or invalid required scores produce an error;
 neither `features` nor `node-impact` calculates replacements. Contributor score
-exports for signed leverage, incident signs/bridges, and temporal activity remain
-prerequisites until their producing stages are connected to `run`.
+exports for incident signs/bridges and temporal activity remain prerequisites
+until their producing stages are connected to `run`.
+
+Signed leverage is `l_signed(i) = (1/d_i) * sum_j W_ij * max(0, (d_i - d_j)/(d_i + d_j))`
+with the unsigned degree `d_i`, so zero-sign edges count in the denominator.
+The bridge score is `sqrt(bridge_fraction * activity / max(activity))`, where the
+bridge fraction is the share of a node's neighbours outside its community.
+Activity is the core graph's `n_interactions` count unless `--activity` supplies
+a per-node export; a full-window score is retrospective. `targeting-scores` also
+writes `targeting_scores.json` with the input checksums and both definitions.
 
 Simulation stages load `unsigned.npz`, `signed.npz`, and `nodes.json` produced by
 `characterise`. Missing or changed matrix artifacts cause an error. A custom
@@ -123,6 +135,7 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 | `data/processed/unsigned.npz`, `signed.npz`, `nodes.json`, `network_metadata.json` | Aligned core matrices, node order, and file/core identity checks. |
 | `data/processed/centrality.csv`, `centrality.json` | Existing centrality scores, raw degrees, and input/output checksums. |
 | `data/processed/communities.csv` | Node community labels. |
+| `data/processed/signed_leverage.csv`, `temporal_bridge_centrality.csv`, `targeting_scores.json` | Proposed targeting scores, the bridge score consumed by `ico`, and their definitions and checksums. |
 | `data/processed/node_features.csv`, `node_features.json` | Node scores and graph/input checksums for reuse by later stages. |
 | `results/topology/metrics.json` | Network metrics, input metadata, and layout settings. |
 | `results/topology/degree_distribution.csv`, `degree_fits.csv`, `degree_distribution.png`, `.pdf` | Core degree distribution, descriptive fits, and figures. |
