@@ -6,6 +6,7 @@ from pathlib import Path
 import matplotlib
 
 from mdacn import config
+from mdacn.combined import run_combined_results
 from mdacn.extraction_comparison import compare_extractions
 from mdacn.link_comparison import compare_link_sources
 from mdacn.sensitivity import run_sensitivity
@@ -155,6 +156,13 @@ def main() -> None:
     )
     sensitivity.add_argument("--skip-nco", action="store_true")
     sensitivity.add_argument("--skip-ico", action="store_true")
+    combined = commands.add_parser(
+        "combined-results", help="Assemble saved results into one report"
+    )
+    combined.add_argument("--results-dir", type=Path, default=Path(config.COMBINED["results_dir"]))
+    combined.add_argument("--output-dir", type=Path, default=Path(config.COMBINED["output_dir"]))
+    combined.add_argument("--temporal-dir", type=Path, default=None)
+    combined.add_argument("--fraction", type=float, default=config.COMBINED["fraction"])
     commands.add_parser("features", help="Save node scores for subsequent experiments")
     commands.add_parser("node-impact", help="Run paired interventions using saved node scores")
     commands.add_parser(
@@ -216,6 +224,13 @@ def main() -> None:
                 phi_c_threshold=args.phi_c_threshold,
                 skip_nco=args.skip_nco,
                 skip_ico=args.skip_ico,
+            )
+        elif args.command == "combined-results":
+            run_combined_results(
+                results_dir=args.results_dir,
+                output_dir=args.output_dir,
+                temporal_dir=args.temporal_dir,
+                fraction=args.fraction,
             )
         elif args.command in simulation_commands:
             run_stage(

@@ -35,6 +35,7 @@ uv run python -m mdacn reports
 | `compare-extractions` | Compare k = 8, 10, 12 and activity >= 100, exporting each core separately. |
 | `compare-link-sources` | Compare body/title coverage, overlap, signs, and 10-core membership. |
 | `sensitivity` | Replay NCO and selected ICO outcomes on the exported cores; compare topology, signs, and outcomes. |
+| `combined-results` | Assemble saved NCO, sign-shuffle, ICO, temporal, rewiring, impact, and sensitivity outputs into one report. |
 | `centrality` | Run the existing degree, betweenness, eigenvector, and leverage implementations and save aligned scores. |
 | `targeting-scores` | Save the proposed signed-leverage and temporal-activity bridge scores used by `ico`. |
 | `features` | Read expected contributor output files, then merge and validate their scores. |
@@ -128,6 +129,17 @@ The default run uses the full `f` sweep for NCO and `random`, `degree`, and
 `--strategies` to add the proposed scores, `--ico-fractions` to widen the ICO
 grid, and `--skip-nco` or `--skip-ico` to rerun one half. See
 [core extraction sensitivity](docs/sensitivity.md).
+
+Assemble the saved experiment outputs into one report:
+
+```bash
+uv run python -m mdacn combined-results
+```
+
+The command reads the saved NCO, sign-shuffle, ICO, temporal, rewiring,
+node-impact, and sensitivity outputs. Missing inputs are listed in
+`results/combined/inputs.json` and `warnings.txt`; the command still writes the
+sections it can build. See [combined results](docs/combined_results.md).
 
 `sign-shuffle` shows a progress bar with elapsed time and ETA. Each step completes
 one empirical/shuffled pair. The sweep reuses the core topology to avoid copying

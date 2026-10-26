@@ -1,0 +1,149 @@
+# Combined results
+
+This stage assembles saved experiment results into one report and one set of
+figures. It does not rerun simulations. Missing inputs are reported in
+`inputs.json` and `warnings.txt`, and the remaining sections are still written.
+
+## Inputs
+
+| Input | Produced by | Path | Required |
+| --- | --- | --- | --- |
+| NCO sweep | `nco` | `results/nco/fraction_sweep.csv` | No, but needed for the phase-transition curves |
+| Sign-shuffle sweep | `sign-shuffle` | `results/sign_shuffle/sign_shuffle_sweep.csv` | No |
+| ICO sweep | `ico` | `results/ico/intervention_sweep.csv` | No, but needed for the budget and `Phi_c` figures |
+| ICO metadata | `ico` | `results/ico/metadata.json` | No |
+| Rewiring summary | `rewire` (PR 13) | `results/rewiring/rewiring_summary.csv` | No |
+| Rewiring `Phi_c` | `rewire-ico` (PR 13) | `results/rewiring_ico/phi_c_summary.csv` | No |
+| Rewiring comparisons | `rewire-ico` (PR 13) | `results/rewiring_ico/g_minus_comparisons.csv` | No |
+| Node impact | `node-impact` | `results/node_impact/study/analysis/node_impact.csv` | No |
+| Impact correlations | `node-impact` | `results/node_impact/study/analysis/correlations.csv` | No |
+| Impact regression | `node-impact` | `results/node_impact/study/analysis/regression.csv` | No |
+| Node features | `features` | `results/node_impact/study/features.csv` | No |
+| Temporal summary | Antreas's scripts | `reports/static_temporal/<timestamp>/summary.csv` | No |
+| Temporal paired effects | Antreas's scripts | `reports/static_temporal/<timestamp>/paired_*.csv` | No |
+| Sensitivity headline | `sensitivity` | `results/sensitivity/headline.csv` | No |
+| Sensitivity ranking | `sensitivity` | `results/sensitivity/strategy_ranking.csv` | No |
+| Filtering stages | `label-audit` (PR 13) | `results/label_audit/filtering_stages.csv` | No |
+| Sign fractions | `directed-roles` (PR 13) | `results/directed_roles/sign_fractions.csv` | No |
+| Incident-sign summary | `incident-signs` | `results/incident_signs/r_neg_summary.csv` | No |
+
+Run each producing stage first when its output is wanted:
+
+```bash
+uv run python -m mdacn nco
+uv run python -m mdacn sign-shuffle
+uv run python -m mdacn ico --fractions 0.3 0.4 0.5 0.6 0.7
+```
+
+The temporal directory is discovered from the latest
+`reports/static_temporal/*/summary.csv` when `--temporal-dir` is not supplied.
+Pass `--temporal-dir` to pin a specific run.
+
+## Command
+
+```bash
+uv run python -m mdacn combined-results
+```
+
+Useful overrides:
+
+```bash
+uv run python -m mdacn combined-results --temporal-dir reports/static_temporal/20261026_120000
+uv run python -m mdacn combined-results --results-dir results --output-dir results/combined
+```
+
+## Outputs
+
+Under `results/combined/`:
+
+| File | Contents |
+| --- | --- |
+| `inputs.json` | Every expected input, whether it was present, row count, columns, and checksum |
+| `warnings.txt` | One line per missing input |
+| `phase_transitions.csv` | Mean, spread, and 2.5 to 97.5 percentile range of `g_minus` and `g_plus` by source, model, and `f` |
+| `raw_fractions.csv` | Raw negative and positive opinion fractions with bands |
+| `stop_reasons.csv` | Steady-state, cycle, and update-limit counts by stage, model, and fraction |
+| `ico_summary.csv` | Opposing cluster size, paired delta, backfire share, and negative influence links by model, fraction, strategy, and budget |
+| `phi_c_by_strategy.csv` | Per-run and aggregated critical budget |
+| `backfire_summary.csv` | Worst backfire share and repelled-neighbour share by model, fraction, and strategy |
+| `temporal_summary.csv` | Antreas's mean temporal outcomes |
+| `temporal_paired_effects.csv` | Temporal-versus-static and temporal-versus-shuffled paired effects |
+| `impact_node_table.csv` | Node impact joined with the saved node scores |
+| `impact_correlations.csv` | Correlation coefficients and intervals from the node-impact analysis |
+| `impact_regression.csv` | Regression coefficients and intervals |
+| `rewiring_by_config.csv` | Mean achieved homophily and changed-edge share per rewired configuration |
+| `rewiring_phi_c.csv` | `Phi_c` per rewired graph and strategy |
+| `rewiring_g_minus_comparisons.csv` | Paired `g_minus` differences against empirical and reference graphs |
+| `sensitivity_headline.csv` | Compact per-core sensitivity table |
+| `sensitivity_strategy_ranking.csv` | Sensitivity strategy ranking at selected budgets |
+| `context_extraction_comparison.csv` | Extraction comparison, when available |
+| `context_filtering_stages.csv` | Label-audit filtering stages, when available |
+| `context_directed_roles.csv` | Directed-role sign fractions, when available |
+| `context_incident_signs.csv` | Incident-sign summary, when available |
+
+Figures:
+
+| File | Contents |
+| --- | --- |
+| `phase_transition_g_minus.png` | Opposing cluster fraction against `f` |
+| `phase_transition_g_plus.png` | Positive cluster fraction against `f` |
+| `raw_fractions.png` | Raw negative and positive opinion fractions |
+| `ico_g_minus.png` | Opposing cluster fraction against `Phi` by strategy |
+| `phi_c_by_strategy.png` | `Phi_c` against `f` by strategy |
+| `backfire.png` | Backfire and repelled-neighbour shares |
+| `stop_reasons.png` | Stop-reason composition |
+| `rewiring_phi_c.png` | `Phi_c` on rewired configurations, when available |
+| `temporal_effects.png` | Paired temporal effects with intervals, when available |
+| `impact_correlations.png` | Predictor correlations with node impact, when available |
+
+## Missing inputs
+
+A missing file does not stop the report. Each one prints a warning and is
+recorded in `inputs.json` and `warnings.txt`. A section is skipped when its
+inputs are absent. If no input at all is present, the command stops with an
+error naming the producing stages.
+
+Some inputs are not produced by a stage on `main`:
+
+- `results/rewiring/` and `results/rewiring_ico/` come from PR 13.
+- `results/label_audit/` and `results/directed_roles/` come from PR 13.
+- `reports/static_temporal/` comes from Antreas's scripts.
+- `results/node_impact/study/` needs `incident_signs.csv` and
+  `temporal_activity.csv`, which are external exports on `main`.
+
+In those cases, copy the saved directory from the owner, or run the producing
+branch. The manifest names exactly what is missing.
+
+## Interpretation
+
+- The phase-transition figures use the full realisation spread. Differences
+  smaller than that band are not established effects.
+- The ICO figures use the paired `delta_g_minus` for strategy comparisons; the
+  raw `g_minus` curve mixes independent budget-wise initial states.
+- `Phi_c` is a per-realisation minimum over the tested budget grid. Report the
+  status strings and the reached fraction, not only the mean.
+- The rewiring figure reads `Phi_c` against the configuration actually reached,
+  not against the nominal target.
+- The sensitivity table shows whether the core choice changes the conclusions.
+- The node-impact table is a join, not a new regression. It reuses Daniel's saved
+  analysis and adds the scores for the deck.
+
+## Reproduce the shown results
+
+Record the commands and settings beside the slides:
+
+```bash
+uv run python -m mdacn setup
+uv run python -m mdacn characterise
+uv run python -m mdacn centrality
+uv run python -m mdacn targeting-scores
+uv run python -m mdacn nco
+uv run python -m mdacn sign-shuffle
+uv run python -m mdacn ico --fractions 0.3 0.4 0.5 0.6 0.7
+uv run python -m mdacn compare-extractions --seed 0
+uv run python -m mdacn sensitivity --strategies random degree betweenness eigenvector leverage signed_leverage temporal_bridge --skip-nco
+uv run python -m mdacn combined-results
+```
+
+Add the producing commands for the temporal, rewiring, node-impact, label-audit,
+and directed-role outputs when those are present.
