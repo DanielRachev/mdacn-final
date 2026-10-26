@@ -94,8 +94,10 @@ def save_reports() -> None:
 def run_stage(stage: str, **overrides) -> None:
     paths = config.stage_paths()
     if stage == "setup":
-        destination = overrides.get("output", paths["dataset"])
-        download_dataset(destination)
+        dataset = overrides.get("dataset", "body")
+        default = paths["dataset"] if dataset == "body" else Path(config.PATHS["title_dataset"])
+        destination = overrides.get("output") or default
+        download_dataset(destination, dataset=dataset)
         print(f"Dataset ready: {destination}")
     elif stage == "characterise":
         options = {

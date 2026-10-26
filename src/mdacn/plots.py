@@ -392,7 +392,7 @@ def plot_sign_shuffle_phase_transition(results: pd.DataFrame, path: Path) -> Non
             )
         if len(statuses) > 1:
             axis.set_title(title)
-        axis.set_xlabel("Initial minority fraction f")
+        axis.set_xlabel("Initial negative fraction f")
         xmin, xmax = min(x_values), max(x_values)
         if xmin == xmax:
             pad = 0.05 if xmin == 0 else max(0.05, abs(xmin) * 0.05)
