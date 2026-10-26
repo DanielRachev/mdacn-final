@@ -61,6 +61,7 @@ def stage_paths() -> dict:
         "ico": results / "ico",
         "node-impact": results / "node_impact",
         "sensitivity": results / "sensitivity",
+        "combined": results / "combined",
     }
 
 
@@ -95,6 +96,15 @@ SENSITIVITY = {
     "seed": SIMULATION["seed"],
     "max_steps": SIMULATION["max_steps"],
     "phi_c_threshold": ICO["phi_c_threshold"],
+}
+
+
+# Combined report: read saved outputs; no simulation settings.
+COMBINED = {
+    "results_dir": "results",
+    "output_dir": "results/combined",
+    "temporal_root": "reports/static_temporal",
+    "fraction": 0.5,
 }
 
 
