@@ -120,11 +120,11 @@ branch. The manifest names exactly what is missing.
 Run on 26 October 2026 against the default connected 10-core, with the ICO
 sweep at `f = 0.3, 0.4, 0.5, 0.6, 0.7` and all seven strategies.
 
-**Available:** NCO, sign-shuffle, ICO, sensitivity, and the extraction
-comparison. Seven inputs were present.
+**Available:** NCO, sign-shuffle, ICO, sensitivity, the extraction comparison,
+and a local temporal reproduction. Eleven inputs were present.
 
-**Missing:** temporal, node-impact, rewiring, label audit, directed roles, and
-incident signs. Thirteen entries are listed in `inputs.json` and `warnings.txt`.
+**Missing:** node-impact, rewiring, label audit, directed roles, and incident
+signs. Nine entries are listed in `inputs.json` and `warnings.txt`.
 
 The available results:
 
@@ -145,10 +145,29 @@ The available results:
   the ranked strategies and 0.002 for random. Signed leverage does not reduce it
   relative to leverage.
 - The default-core strategy order matches the sensitivity comparison.
+- The temporal reproduction uses three fractions, 0.3, 0.5, and 0.7, with 20
+  initialisations and 20 shuffles. It is a local reduced reproduction, not
+  Antreas's full nine-fraction run.
+  - Real temporal versus static: at `f = 0.3`, absolute magnetization is 0.106
+    lower (95% interval -0.109 to -0.103), minority fraction 0.053 higher,
+    minority-LCC fraction 0.156 higher, and switches 1,382 higher. At `f = 0.5`
+    the magnetization gap is -0.150, minority fraction +0.075, minority-LCC
+    fraction -0.053 with an interval of -0.125 to 0.022, and switches +443. At
+    `f = 0.7` the pattern is similar to `f = 0.3`.
+  - Real temporal versus shuffled timestamps: at `f = 0.3`, magnetization is
+    0.041 higher, minority fraction 0.020 lower, minority-LCC fraction 0.147
+    higher, and switches 252 higher. At `f = 0.5`, magnetization is 0.116 higher,
+    minority fraction 0.058 lower, minority-LCC fraction 0.041 higher with an
+    interval that includes zero, and switches 321 lower. At `f = 0.7` the pattern
+    is similar to `f = 0.3`, with minority-LCC fraction 0.179 higher.
+  - The temporal ordering changes outcomes relative to both the static baseline
+    and the timestamp-shuffled control. The strongest magnetization and minority
+    effects are at `f = 0.5`. The minority-LCC difference at `f = 0.5` is not
+    distinguishable from zero.
 
-The combined report and deck still need the missing temporal, node-impact, and
-rewiring sections. Their paths are named in `inputs.json`, so they can be added
-without changing the command.
+The combined report and deck still need the node-impact and rewiring sections
+and the PR13 diagnostics. Their paths are named in `inputs.json`, so they can be
+added without changing the command.
 
 ## Interpretation
 
