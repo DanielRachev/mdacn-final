@@ -769,7 +769,7 @@ def compare_sign_persistence(
 
 
 def summarize_sign_persistence(results: pd.DataFrame) -> pd.DataFrame:
-    """Calculate observed/null transition probabilities and empirical null tail areas."""
+    """Summarize transitions, leaving p-values undefined for missing observations."""
     real = results.loc[results["variant"] == "real"].set_index(["previous", "current"])
     records = []
 
@@ -781,8 +781,11 @@ def summarize_sign_persistence(results: pd.DataFrame) -> pd.DataFrame:
             if len(null) == 0:
                 continue
 
-            lower = (1 + np.count_nonzero(null <= observed)) / (len(null) + 1)
-            upper = (1 + np.count_nonzero(null >= observed)) / (len(null) + 1)
+            p_two_sided = np.nan
+            if np.isfinite(observed):
+                lower = (1 + np.count_nonzero(null <= observed)) / (len(null) + 1)
+                upper = (1 + np.count_nonzero(null >= observed)) / (len(null) + 1)
+                p_two_sided = min(1.0, 2 * min(lower, upper))
 
             records.append(
                 {
@@ -794,7 +797,7 @@ def summarize_sign_persistence(results: pd.DataFrame) -> pd.DataFrame:
                     "null_low": float(np.quantile(null, 0.025)),
                     "null_high": float(np.quantile(null, 0.975)),
                     "difference": float(observed - null.mean()),
-                    "p_two_sided": min(1.0, 2 * min(lower, upper)),
+                    "p_two_sided": p_two_sided,
                 }
             )
 

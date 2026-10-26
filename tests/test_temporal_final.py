@@ -95,6 +95,30 @@ def test_sign_persistence_comparison():
     assert summary["null_mean"].dropna().between(0, 1).all()
 
 
+def test_sign_persistence_leaves_undefined_observations_untested():
+    weeks = [
+        ("2020-01-01", (1, 1, -1, -1)),
+        ("2020-01-08", (1, 1, -1, -1)),
+        ("2020-01-15", (-1, -1, -1, -1)),
+    ]
+    events = pd.DataFrame(
+        [("A", "B", sign, pd.Timestamp(date)) for date, signs in weeks for sign in signs],
+        columns=["source", "target", "sentiment", "timestamp"],
+    )
+    results = compare_sign_persistence(events, ("A", "B"), n_shuffles=100, seed=42)
+    summary = summarize_sign_persistence(results)
+
+    # Negative is observed only in the last week, so it has no outgoing transitions.
+    undefined = summary.loc[summary["previous"] == "-"]
+    assert not undefined.empty
+    assert undefined["observed"].isna().all()
+    assert undefined["null_mean"].notna().all()
+    assert undefined["p_two_sided"].isna().all()
+    defined = summary.loc[summary["observed"].notna()]
+    assert not defined.empty
+    assert defined["p_two_sided"].between(0, 1).all()
+
+
 def test_minority_experiment_is_reproducible():
     first = run_minority_experiment(
         make_events(), NODES, fractions=(0.5,), n_initializations=2, n_shuffles=2, seed=42

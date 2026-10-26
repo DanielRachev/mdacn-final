@@ -118,8 +118,10 @@ def test_setup_uses_shared_dataset_path(tmp_path, monkeypatch):
     dataset = tmp_path / "body.tsv"
     monkeypatch.setitem(cli.config.PATHS, "dataset", str(dataset))
     calls = []
-    monkeypatch.setattr(workflow, "download_dataset", calls.append)
+    monkeypatch.setattr(
+        workflow, "download_dataset", lambda path, **options: calls.append((path, options))
+    )
     monkeypatch.setattr("sys.argv", ["mdacn", "setup"])
     cli.main()
-    assert calls == [dataset]
+    assert calls == [(dataset, {"dataset": "body"})]
     assert not dataset.exists()
