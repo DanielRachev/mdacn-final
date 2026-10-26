@@ -39,7 +39,7 @@ uv run python -m mdacn reports
 | `features` | Read expected contributor output files, then merge and validate their scores. |
 | `nco` | Save unsigned and signed simulation outcomes on the exported core. |
 | `sign-shuffle` | Save paired empirical/sign-shuffled simulation outcomes. |
-| `ico` | Load saved matrices and scores, then save the existing unsigned random/degree/leverage budget sweep for each configured initial fraction. |
+| `ico` | Load saved matrices and scores, then run all seven targeting strategies on the unsigned and signed cores and save the budget sweep, `Phi_c`, and backfire columns. |
 | `node-impact` | Load saved scores and save paired single-node intervention outcomes for every core node. |
 | `reports` | Save summaries, impact statistics, and plots from stored experiment results. |
 
@@ -51,6 +51,8 @@ settings for summaries and current analysis settings for bootstrap calculations.
 
 Phase 2 node-impact commands, input tables, and output interpretation:
 [Node-impact guide](docs/node_impact.md).
+Targeting strategies, the backfire measurement, and `Phi_c`:
+[Contrarian targeting benchmark](docs/interventions.md).
 
 Alternative core: filter by original incident interaction count, then keep the
 largest connected component.
@@ -95,8 +97,9 @@ writes `targeting_scores.json` with the input checksums and both definitions.
 Simulation stages load `unsigned.npz`, `signed.npz`, and `nodes.json` produced by
 `characterise`. Missing or changed matrix artifacts cause an error. A custom
 `--graph` requires the matching artifacts and `network_metadata.json` beside it.
-`ico` takes its budget grid from `ICO["budgets"]`; fractions and repeated-run
-settings use `SIMULATION`. `reports` reads its saved results without rerunning it.
+`ico` takes its budget grid, models, strategies, and `Phi_c` threshold from
+`ICO`; fractions and repeated-run settings use `SIMULATION`. `reports` reads its
+saved results without rerunning it.
 
 Run Jacek's structural comparisons separately from the simulation experiments:
 
@@ -119,6 +122,10 @@ NCO, sign-shuffle, and ICO use the same 50-point fraction grid: 0.02 to 1.00 in
 steps of 0.02. Set `--fractions` to supply another grid. Seeds are assigned by
 recorded fraction order, then realization; changing the grid changes which
 initial seeds are assigned to shared fraction points.
+
+The full ICO suite costs about 98,000 runs on that grid, five times the earlier
+unsigned three-strategy sweep. Narrow `--fractions` and refine near an observed
+threshold instead; see [the targeting benchmark guide](docs/interventions.md).
 
 Sign shuffling also saves the largest and second-largest components for each
 opinion, measured on the fixed unsigned core and divided by the full core size.
@@ -158,7 +165,7 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 | `results/topology/core_layout.csv`, `core_communities.png`, `.pdf` | Full-core layout coordinates, community labels, and figures. |
 | `results/nco/` | Simulation results, raw-fraction and opinion-component summaries/figures, and metadata. |
 | `results/sign_shuffle/` | Sign-shuffle results, component summaries/figures, metadata, and node order. |
-| `results/ico/` | `intervention_sweep.csv`, run settings and node order; `reports` adds `intervention_summary.csv` and comparison PNGs per initial fraction. |
+| `results/ico/` | `intervention_sweep.csv`, `phi_c.csv`, run settings, and node order; `reports` adds `intervention_summary.csv`, per-model comparison PNGs per initial fraction, and `phi_c_comparison.png`. |
 | `results/node_impact/` | Run config and `study/` containing frozen core features, paired outcomes, and `analysis/`. |
 | `data/processed/extraction_comparison/<configuration>/` | Separate core graphs, aligned matrices and metadata, communities, and node orders for Georgi. |
 | `results/extraction_comparison/` | Comparison CSV/JSON, per-core metrics, degree distributions, tables, and figures. |

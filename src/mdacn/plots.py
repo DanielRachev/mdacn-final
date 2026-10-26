@@ -11,6 +11,27 @@ from matplotlib.lines import Line2D
 
 from mdacn.characterisation import degree_distribution, fitted_degree_probabilities
 
+# One colour per strategy across figures.
+STRATEGY_COLORS = {
+    "random": "tab:blue",
+    "degree": "tab:orange",
+    "betweenness": "tab:purple",
+    "eigenvector": "tab:brown",
+    "leverage": "tab:green",
+    "signed_leverage": "tab:red",
+    "temporal_bridge": "tab:cyan",
+}
+
+
+def strategy_color(strategy: str, fallback_index: int = 0) -> str:
+    """Return the shared colour for a targeting strategy."""
+    return STRATEGY_COLORS.get(strategy, f"C{fallback_index % 10}")
+
+
+def strategy_label(strategy: str) -> str:
+    """Return a readable legend label for a targeting strategy."""
+    return strategy.replace("_", " ").capitalize()
+
 
 def plot_degree_distribution(distribution: pd.DataFrame, fits: pd.DataFrame, path: Path) -> None:
     """Owner: Jacek. Save empirical and fitted degree curves on log-log and log-linear axes."""
@@ -397,10 +418,10 @@ def plot_intervention_comparison(
 ) -> None:
     """Owner: Polly. Save opposing cluster fraction S_1/N against contrarian budget Phi.
 
-    Compare random, degree, and leverage targeting with realisation variability.
-    Identify cycles and update-limit runs separately from steady-state results.
-    Set opinion="plus" to show the positive GCC instead. The default also
-    accepts older tables containing only cluster_size and n_nodes.
+    Phase 2 plots every strategy present. Compare strategies with realisation
+    variability. Identify cycles and update-limit runs separately from
+    steady-state results. Set opinion="plus" to show the positive GCC instead.
+    The default also accepts older tables containing only cluster_size and n_nodes.
     """
     if results.empty:
         raise ValueError("No intervention results to plot")
@@ -429,14 +450,11 @@ def plot_intervention_comparison(
     lower, upper = 0.0, 1.0
     for axis, (status, title) in zip(axes, statuses, strict=True):
         subset = results.loc[results["stop_reason"] == status]
-        for strategy, color in (
-            ("random", "tab:blue"),
-            ("degree", "tab:orange"),
-            ("leverage", "tab:green"),
-        ):
+        for index, strategy in enumerate(sorted(results["strategy"].unique())):
             runs = subset.loc[subset["strategy"] == strategy]
             if runs.empty:
                 continue
+            color = strategy_color(str(strategy), index)
             summary = runs.groupby("budget")["cluster_fraction"].agg(["mean", "std"])
             spread = summary["std"].fillna(0)
             lower = min(lower, float((summary["mean"] - spread).min()))
@@ -450,7 +468,7 @@ def plot_intervention_comparison(
                 fmt="o-" if status == "steady_state" else "o--",
                 color=color,
                 capsize=3,
-                label=strategy.capitalize(),
+                label=strategy_label(str(strategy)),
             )
         axis.set_title(title)
         axis.set_xlabel("Contrarian budget Phi")
@@ -469,6 +487,46 @@ def plot_intervention_comparison(
     fig.suptitle(
         "Intervention comparison\n"
         f"Mean ± sample standard deviation; cycles: {cycles}, update-limit runs: {limited}"
+    )
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def plot_phi_c_comparison(phi_c: pd.DataFrame, path: Path) -> None:
+    """Owner: Georgi. Save the critical budget Phi_c against the initial fraction.
+
+    One panel per model and one line per strategy. A run that never crossed is
+    left as a gap.
+    """
+    if phi_c.empty:
+        raise ValueError("No Phi_c results to plot")
+    required = {"model", "f", "strategy", "mean_phi_c"}
+    if not required <= set(phi_c):
+        raise ValueError(f"Phi_c table requires columns: {sorted(required)}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    models = sorted(phi_c["model"].unique())
+    fig, axes = plt.subplots(1, len(models), figsize=(5.5 * len(models), 4.8), sharey=True)
+    axes = np.atleast_1d(axes)
+    for axis, model in zip(axes, models, strict=True):
+        subset = phi_c.loc[phi_c["model"] == model]
+        for index, strategy in enumerate(sorted(subset["strategy"].unique())):
+            runs = subset.loc[subset["strategy"] == strategy].sort_values("f")
+            axis.plot(
+                runs["f"],
+                runs["mean_phi_c"],
+                "o-",
+                color=strategy_color(str(strategy), index),
+                label=strategy_label(str(strategy)),
+            )
+        axis.set_title(f"{model.capitalize()} model")
+        axis.set_xlabel("Initial negative fraction f")
+        axis.set_ylim(-0.01, 1.01)
+        axis.grid(alpha=0.2)
+        axis.legend(fontsize=8)
+    axes[0].set_ylabel("Critical budget Φ_c")
+    fig.suptitle(
+        "Critical contrarian budget per targeting strategy\nMean first crossing of g₋ < 0.5"
     )
     fig.tight_layout()
     fig.savefig(path, dpi=160)
