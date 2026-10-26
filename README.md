@@ -34,6 +34,7 @@ uv run python -m mdacn reports
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
 | `compare-extractions` | Compare k = 8, 10, 12 and activity >= 100, exporting each core separately. |
 | `compare-link-sources` | Compare body/title coverage, overlap, signs, and 10-core membership. |
+| `sensitivity` | Replay NCO and selected ICO outcomes on the exported cores; compare topology, signs, and outcomes. |
 | `centrality` | Run the existing degree, betweenness, eigenvector, and leverage implementations and save aligned scores. |
 | `targeting-scores` | Save the proposed signed-leverage and temporal-activity bridge scores used by `ico`. |
 | `features` | Read expected contributor output files, then merge and validate their scores. |
@@ -113,6 +114,20 @@ The extraction comparison uses seed 0 and writes to its own output directories.
 It exports each graph with its matching matrices and `nodes.json`; changing
 extraction changes the node set. The title audit measures feasibility without
 running opinion dynamics. See [measured findings and handoff](docs/extraction_comparison.md).
+
+Replay the simulation protocol on those exported cores to check whether the
+default 10-core changes the conclusions:
+
+```bash
+uv run python -m mdacn sensitivity
+```
+
+The default run uses the full `f` sweep for NCO and `random`, `degree`, and
+`leverage` at `f = 0.5` for ICO, with both models and 20 realisations. It writes
+`results/sensitivity/` tables, figures, and a per-core outcome summary. Use
+`--strategies` to add the proposed scores, `--ico-fractions` to widen the ICO
+grid, and `--skip-nco` or `--skip-ico` to rerun one half. See
+[core extraction sensitivity](docs/sensitivity.md).
 
 `sign-shuffle` shows a progress bar with elapsed time and ETA. Each step completes
 one empirical/shuffled pair. The sweep reuses the core topology to avoid copying
