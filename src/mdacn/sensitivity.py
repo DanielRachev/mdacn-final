@@ -251,6 +251,53 @@ def _headline_table(
     return pd.DataFrame(rows)
 
 
+def _strategy_ranking_table(
+    ico_summary: pd.DataFrame,
+    phi_c: pd.DataFrame,
+    *,
+    fraction: float = HEADLINE_FRACTION,
+) -> pd.DataFrame:
+    """Return strategies ranked by paired effect at the selected budgets."""
+    if ico_summary.empty:
+        return pd.DataFrame()
+    subset = ico_summary.loc[np.isclose(ico_summary["f"].astype(float), fraction)]
+    records = []
+    for keys, group in subset.groupby(["configuration", "model", "budget"], sort=True):
+        configuration, model, budget = keys
+        if not any(np.isclose(float(budget), value) for value in HEADLINE_BUDGETS):
+            continue
+        phi_table = phi_c.loc[
+            (phi_c["configuration"] == configuration)
+            & (phi_c["model"] == model)
+            & (phi_c["strategy"].isin(group["strategy"]))
+            & np.isclose(phi_c["f"].astype(float), fraction)
+        ].set_index("strategy")
+        for rank, row in enumerate(
+            group.sort_values("mean_delta_g_minus", kind="stable").itertuples(index=False),
+            start=1,
+        ):
+            records.append(
+                {
+                    "configuration": configuration,
+                    "model": model,
+                    "f": float(fraction),
+                    "budget": float(budget),
+                    "rank": rank,
+                    "strategy": row.strategy,
+                    "mean_g_minus": float(row.mean_g_minus),
+                    "mean_delta_g_minus": float(row.mean_delta_g_minus),
+                    "backfire_run_fraction": float(row.backfire_run_fraction),
+                    "mean_repelled_share": float(row.mean_repelled_share),
+                    "mean_phi_c": (
+                        float(phi_table.loc[row.strategy, "mean_phi_c"])
+                        if row.strategy in phi_table.index
+                        else np.nan
+                    ),
+                }
+            )
+    return pd.DataFrame(records)
+
+
 def _read_saved(path: Path, configuration: str) -> pd.DataFrame:
     """Read a previously saved sensitivity sweep and tag its configuration."""
     if not path.is_file():
@@ -321,10 +368,11 @@ def run_sensitivity(
     for configuration in configurations:
         graph_path = _require_configuration(extraction_dir, configuration)
         print(f"Sensitivity: {configuration}", flush=True)
-        save_centrality_scores(graph_path)
-        # The ICO metadata checksums both proposed score files even when the
-        # selected strategies do not use them, so export them for every core.
-        save_targeting_scores(graph_path)
+        if not skip_ico:
+            save_centrality_scores(graph_path)
+            # The ICO metadata checksums both proposed score files even when the
+            # selected strategies do not use them, so export them for every core.
+            save_targeting_scores(graph_path)
 
         if skip_nco:
             nco_tables.append(
@@ -392,6 +440,7 @@ def run_sensitivity(
     )
     topology = _topology_table(extraction_dir, configurations, results_dir)
     headline = _headline_table(topology, nco_summary, ico_summary, phi_c)
+    ranking = _strategy_ranking_table(ico_summary, phi_c)
 
     topology.to_csv(results_dir / "topology.csv", index=False)
     nco_summary.to_csv(results_dir / "nco_summary.csv", index=False)
@@ -400,6 +449,7 @@ def run_sensitivity(
     ico_stops.to_csv(results_dir / "ico_stop_reasons.csv", index=False)
     phi_c.to_csv(results_dir / "phi_c.csv", index=False)
     headline.to_csv(results_dir / "headline.csv", index=False)
+    ranking.to_csv(results_dir / "strategy_ranking.csv", index=False)
     write_json(
         results_dir / "metadata.json",
         {
@@ -448,4 +498,5 @@ def run_sensitivity(
         "ico_summary": ico_summary,
         "phi_c": phi_c,
         "headline": headline,
+        "strategy_ranking": ranking,
     }

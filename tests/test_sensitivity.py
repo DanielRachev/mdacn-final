@@ -72,6 +72,7 @@ def test_sensitivity_writes_summaries_for_every_configuration(extraction, tmp_pa
         "ico_summary.csv",
         "phi_c.csv",
         "headline.csv",
+        "strategy_ranking.csv",
         "metadata.json",
         "nco_g_minus_by_configuration.png",
         "ico_degree_g_minus_by_configuration.png",
@@ -83,6 +84,8 @@ def test_sensitivity_writes_summaries_for_every_configuration(extraction, tmp_pa
     assert set(results["nco_summary"]["configuration"]) == {"k_core_8", "activity_lcc_100"}
     assert set(results["ico_summary"]["strategy"]) == {"random", "degree"}
     assert results["headline"]["configuration"].tolist() == ["k_core_8", "activity_lcc_100"]
+    assert set(results["strategy_ranking"]["strategy"]) == {"random", "degree"}
+    assert results["strategy_ranking"]["rank"].min() == 1
 
 
 def test_sensitivity_names_the_comparison_command_when_a_core_is_missing(tmp_path):
