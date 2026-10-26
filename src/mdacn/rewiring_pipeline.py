@@ -1,6 +1,5 @@
 """Null Model B experiments: export rewired graphs and compare signed ICO Phi_c."""
 
-import hashlib
 import json
 import zlib
 from dataclasses import asdict, dataclass
@@ -13,12 +12,15 @@ import pandas as pd
 from scipy.sparse import csr_matrix, load_npz, save_npz
 from tqdm import tqdm
 
+from mdacn import config
+from mdacn.artifacts import checksum, write_json
 from mdacn.centrality import leverage_centrality
-from mdacn.contracts import NetworkMatrices, SimulationResult, Strategy
-from mdacn.data import build_matrices, load_graph
-from mdacn.dynamics import _prepare_matrix, _prepare_state, _step, initialize_opinions, simulate_nco
+from mdacn.centrality_pipeline import load_centrality_scores
+from mdacn.contracts import NetworkMatrices, Strategy
+from mdacn.data import build_matrices, load_graph, load_matrices
+from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.evaluation import compute_opinion_gcc
-from mdacn.interventions import select_contrarians
+from mdacn.interventions import select_contrarians, simulate_ico
 from mdacn.rewiring import (
     Rule,
     Target,
@@ -30,11 +32,8 @@ from mdacn.rewiring import (
 )
 from mdacn.temporal_analysis import paired_bootstrap_interval
 
-# Calibrated on the 10-core: insular betas span below, near, and above the empirical
-# insular score; integrated betas span reference to near-saturation. Betas >= 8
-# matched non-worsening in both directions.
-DEFAULT_BETAS = {"insular": (1.0, 2.0, 4.0), "integrated": (0.5, 1.0, 2.0)}
-DEFAULT_BUDGETS = (0.0, 0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.25)
+DEFAULT_BETAS = {target: tuple(beta) for target, beta in config.REWIRING["betas"].items()}
+DEFAULT_BUDGETS = tuple(config.REWIRED_ICO["budgets"])
 EMPIRICAL = "empirical"
 REFERENCE = "reference"
 
@@ -81,8 +80,6 @@ def stream_seed(seed: int, label: str, index: int) -> int:
 def run_rewiring_experiment(
     graph_path: Path,
     *,
-    nodes_path: Path = Path("data/processed/nodes.json"),
-    centrality_path: Path = Path("data/processed/centrality.csv"),
     metrics_path: Path = Path("results/topology/metrics.json"),
     results_dir: Path = Path("results/rewiring"),
     specs: tuple[RewiringSpec, ...] | None = None,
@@ -94,22 +91,13 @@ def run_rewiring_experiment(
     checkpoints: int = 20,
     show_progress: bool = False,
 ) -> pd.DataFrame:
-    """Owner: Jakub. Generate, validate, and export rewired graphs for each spec.
+    """Generate, validate, and export rewired graphs for each spec.
 
     Every graph receives at most attempts_per_edge * |E| attempted swaps and stops
     earlier once its tracked score changes by at most tolerance * (signed edges) over
     a window of window_per_edge * |E| attempts; window_per_edge = 0 disables the
     stop. Checkpoints are saved once per window, or checkpoints times without
-    a window. Each replicate
-    writes unsigned.npz, signed.npz, degrees.csv, and metadata.json under
-    graphs/<spec>/replicate_<k>. Matrices follow the original nodes.json order,
-    which is checked rather than rewritten. Each replicate also saves the degree
-    and leverage scores used for targeting as centrality.csv.
-
-    Saved empirical outputs are reused: centrality_path supplies empirical scores
-    and metrics_path the empirical degree assortativity when present and matching
-    the core. Missing empirical scores are computed once and saved under
-    graphs/empirical. Return one summary row per graph, including the empirical graph.
+    a window. Return one summary row per graph, including the empirical graph.
     """
     if isinstance(replicates, bool) or not isinstance(replicates, int) or replicates < 1:
         raise ValueError("replicates must be a positive integer")
@@ -119,14 +107,17 @@ def run_rewiring_experiment(
     if len({spec.name for spec in specs}) != len(specs) or EMPIRICAL in {s.name for s in specs}:
         raise ValueError("Spec names must be unique and differ from 'empirical'")
     graph = load_graph(graph_path)
-    nodes = _load_nodes(nodes_path, graph)
+    nodes = load_matrices(graph_path).nodes
+    if nodes != tuple(sorted(graph)):
+        raise ValueError("Saved node order does not match the core graph")
+    load_centrality_scores(graph_path)
+    processed = config.processed_paths(graph_path.parent)
     attempts = attempts_per_edge * graph.number_of_edges()
     window = round(window_per_edge * graph.number_of_edges())
     interval = window or (max(1, attempts // checkpoints) if checkpoints and attempts else 0)
     bounds = homophily_bounds(graph)
     before = homophily_counts(graph)
     results_dir.mkdir(parents=True, exist_ok=True)
-    empirical_centrality = _empirical_centrality(graph, centrality_path, results_dir)
 
     rows = [
         _summary_row(
@@ -181,7 +172,7 @@ def run_rewiring_experiment(
             "homophily_after": homophily,
             "homophily_bounds": bounds,
         }
-        (folder / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+        write_json(folder / "metadata.json", metadata)
         row = _summary_row(
             spec.name,
             spec.target,
@@ -216,12 +207,11 @@ def run_rewiring_experiment(
         print(f"Warning: {len(pairs)} disconnected graphs: {pairs}", flush=True)
     run_metadata = {
         "graph_path": str(graph_path.resolve()),
-        "graph_sha256": _sha256(graph_path),
-        "nodes_path": str(nodes_path.resolve()),
-        "nodes_sha256": _sha256(nodes_path),
-        "empirical_centrality": empirical_centrality,
-        "empirical_centrality_sha256": _sha256(_resolve(results_dir, empirical_centrality)),
-        "targeting_scores": "Degree and leverage per graph, saved once as centrality.csv",
+        "graph_sha256": checksum(graph_path),
+        "nodes_path": str(processed["nodes"].resolve()),
+        "nodes_sha256": checksum(processed["nodes"]),
+        "empirical_centrality": str(processed["centrality"].resolve()),
+        "empirical_centrality_sha256": checksum(processed["centrality"]),
         "graph_metadata": graph.graph,
         "n_nodes": len(graph),
         "n_edges": graph.number_of_edges(),
@@ -232,47 +222,17 @@ def run_rewiring_experiment(
         "window_per_edge": window_per_edge,
         "window_attempts": window,
         "tolerance": tolerance,
-        "convergence": (
-            "Stop when the tracked score changes by at most tolerance * (positive + "
-            "negative edges) over one window; tracked score is the target score, or "
-            "within-community signed edges for the reference"
-        ),
         "checkpoint_interval": interval,
         "seed": seed,
-        "seed_assignment": "SeedSequence(seed, spawn_key=(crc32('rewire:<spec>'), replicate))",
-        "proposal": (
-            "Uniform first edge, uniform second edge of the same sign, independent "
-            "orientation flips; (u, v), (x, y) -> (u, y), (x, v)"
-        ),
-        "rejections": "Self loops, duplicate edges, and unchanged pairs; then the rule",
-        "sign_rule": (
-            "Same-sign swaps; each edge record (sign, n_positive, n_negative) follows "
-            "its first endpoint: (u, y) takes (u, v), (x, v) takes (x, y)"
-        ),
-        "steering": (
-            "h_insular = positive_within + negative_between; "
-            "h_integrated = positive_between + negative_within; zero edges unsteered"
-        ),
-        "rules": {
-            "unbiased": "accept every valid swap",
-            "strict": "accept delta_h > 0",
-            "non_worsening": "accept delta_h >= 0",
-            "metropolis": "accept delta_h >= 0, else with probability exp(beta * delta_h)",
-        },
-        "invariants": (
-            "Node set, unsigned degree, positive/negative/zero degree per node, global "
-            "sign counts, edge-record multiset. Edge set and connectivity can change."
-        ),
-        "communities": "Fixed baseline labels stored in the core graph's 'community' attribute",
         "versions": {name: version(name) for name in ("mdacn-final", "networkx", "numpy")},
     }
-    (results_dir / "metadata.json").write_text(json.dumps(run_metadata, indent=2) + "\n")
+    write_json(results_dir / "metadata.json", run_metadata)
     print(f"Saved {len(jobs)} rewired graphs to {results_dir}", flush=True)
     return summary
 
 
 def run_rewired_ico_experiment(
-    processed_dir: Path = Path("data/processed"),
+    graph_path: Path = Path("data/processed/core.graphml"),
     *,
     rewired_dir: Path = Path("results/rewiring"),
     results_dir: Path = Path("results/rewiring_ico"),
@@ -286,7 +246,7 @@ def run_rewired_ico_experiment(
     n_bootstrap: int = 2000,
     show_progress: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Owner: Jakub. Run paired signed ICO on the empirical and every rewired graph.
+    """Run paired signed ICO on the empirical and every rewired graph.
 
     Each initial state settles under signed NCO before contrarians are pinned at +1.
     Initial states and random-targeting seeds depend only on the initialization
@@ -295,9 +255,6 @@ def run_rewired_ico_experiment(
     graph. Baseline and terminal states are saved as packed bits in final_states.npz
     so other measurements can be taken from stored results. Return raw runs,
     per-run Phi_c, and comparisons.
-
-    Nothing is recomputed: empirical matrices and node order come from
-    processed_dir, rewired matrices and every targeting score from rewired_dir.
     """
     budgets = tuple(sorted(budgets))
     if not budgets or not all(np.isfinite(b) and 0 <= b <= 1 for b in budgets):
@@ -309,14 +266,14 @@ def run_rewired_ico_experiment(
     if not 0 <= negative_fraction <= 1 or not 0 < threshold < 1:
         raise ValueError("negative_fraction must lie in [0, 1] and threshold in (0, 1)")
     rewiring = json.loads((rewired_dir / "metadata.json").read_text())
-    nodes_path = processed_dir / "nodes.json"
-    if _sha256(nodes_path) != rewiring["nodes_sha256"]:
-        raise ValueError(f"{nodes_path} differs from the node order used for rewiring")
-    nodes = tuple(json.loads(nodes_path.read_text(encoding="utf-8")))
+    processed = config.processed_paths(graph_path.parent)
+    if checksum(processed["nodes"]) != rewiring["nodes_sha256"]:
+        raise ValueError(f"{processed['nodes']} differs from the node order used for rewiring")
+    empirical = load_matrices(graph_path)
+    nodes = empirical.nodes
     centrality = _resolve(rewired_dir, rewiring["empirical_centrality"])
-    if _sha256(centrality) != rewiring["empirical_centrality_sha256"]:
+    if checksum(centrality) != rewiring["empirical_centrality_sha256"]:
         raise ValueError(f"{centrality} changed since rewiring")
-    empirical = _load_network(processed_dir, nodes)
     # Opinion components are measured on the fixed empirical core for every graph.
     core = nx.relabel_nodes(nx.from_scipy_sparse_array(empirical.unsigned), dict(enumerate(nodes)))
     graphs = [(EMPIRICAL, 0, empirical, centrality)]
@@ -380,8 +337,13 @@ def run_rewired_ico_experiment(
                         seed=target_seed,
                         scores=scores.get(strategy),
                     )
-                    result = _simulate_signed_ico(
-                        network.signed, baseline.final_state, nodes, contrarians, max_steps
+                    result = simulate_ico(
+                        network.signed,
+                        baseline.final_state,
+                        nodes=nodes,
+                        contrarians=contrarians,
+                        max_steps=max_steps,
+                        model="signed",
                     )
                     row.update(
                         pinned_count=len(contrarians),
@@ -416,14 +378,13 @@ def run_rewired_ico_experiment(
     )
     comparisons.to_csv(results_dir / "g_minus_comparisons.csv", index=False)
     metadata = {
-        "processed_dir": str(processed_dir.resolve()),
+        "graph_path": str(graph_path.resolve()),
         "matrix_sha256": {
-            name: _sha256(processed_dir / name)
-            for name in ("unsigned.npz", "signed.npz", "nodes.json")
+            name: checksum(processed[name]) for name in ("unsigned", "signed", "nodes")
         },
         "empirical_centrality": str(centrality.resolve()),
         "rewired_dir": str(rewired_dir.resolve()),
-        "rewiring_summary_sha256": _sha256(rewired_dir / "rewiring_summary.csv"),
+        "rewiring_summary_sha256": checksum(rewired_dir / "rewiring_summary.csv"),
         "budgets": list(budgets),
         "negative_fraction": negative_fraction,
         "initializations": initializations,
@@ -431,31 +392,11 @@ def run_rewired_ico_experiment(
         "seed": seed,
         "initial_seeds": initial_seeds,
         "target_seeds": target_seeds,
-        "seed_assignment": "SeedSequence(seed, spawn_key=(crc32('initial'|'target'), i))",
         "max_steps": max_steps,
         "threshold": threshold,
-        "model": "Signed NCO baseline, then signed ICO with contrarians pinned at +1",
-        "targeting_scores": "Loaded from each graph's saved centrality.csv",
-        "g_minus_definition": (
-            "Largest -1 component on the fixed empirical unsigned core / core N, for "
-            "every graph (shared convention)"
-        ),
-        "final_states": (
-            "final_states.npz: packed bits (1 = +1) in nodes.json order; 'baseline' rows "
-            "match baseline_index and 'final' rows match state_index (-1 = not run)"
-        ),
-        "phi_c_definition": (
-            "First tested budget with g_minus < threshold; 0 if already below at Phi = 0; "
-            "NaN with threshold_reached = False when not reached in the tested range"
-        ),
-        "excluded_runs": "Initializations whose signed baseline did not reach a steady state",
-        "comparisons": (
-            "Paired g_minus differences per budget; bootstrap over initializations and "
-            "replicates. Reference pairs share a replicate index only by convention."
-        ),
         "versions": {name: version(name) for name in ("mdacn-final", "numpy", "scipy")},
     }
-    (results_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    write_json(results_dir / "metadata.json", metadata)
     print(f"Saved rewired ICO results to {results_dir}", flush=True)
     return raw, phi_c, comparisons
 
@@ -579,38 +520,6 @@ def compare_to_controls(
     return pd.DataFrame(rows)
 
 
-def _simulate_signed_ico(
-    signed: csr_matrix,
-    initial_state: np.ndarray,
-    nodes: tuple[str, ...],
-    contrarians: tuple[str, ...],
-    max_steps: int,
-) -> SimulationResult:
-    """Signed ICO from a settled state with contrarians pinned at +1.
-
-    Mirrors simulate_ico(model='signed') on feat/impact-study; replace this helper
-    with that function once it reaches main.
-    """
-    matrix = _prepare_matrix(signed, "signed")
-    state = _prepare_state(initial_state, len(nodes))
-    chosen = set(contrarians)
-    fixed = np.array([i for i, node in enumerate(nodes) if node in chosen], dtype=int)
-    state[fixed] = 1
-    seen = {np.packbits(state > 0).tobytes(): 0}
-    for step in range(1, max_steps + 1):
-        state = _step(matrix, state)
-        state[fixed] = 1
-        key = np.packbits(state > 0).tobytes()
-        previous = seen.get(key)
-        if previous is not None:
-            period = step - previous
-            if period == 1:
-                return SimulationResult(state, step, "steady_state")
-            return SimulationResult(state, step, "limit_cycle", period)
-        seen[key] = step
-    return SimulationResult(state, max_steps, "max_steps")
-
-
 def _pack(states: list[np.ndarray], n_nodes: int) -> np.ndarray:
     if not states:
         return np.zeros((0, (n_nodes + 7) // 8), dtype=np.uint8)
@@ -664,30 +573,15 @@ def _centrality_table(graph: nx.Graph, nodes: tuple[str, ...]) -> pd.DataFrame:
     )
 
 
-def _empirical_centrality(graph: nx.Graph, path: Path, results_dir: Path) -> str:
-    """Return the saved empirical score file, computing and saving it only if missing."""
-    nodes = tuple(sorted(graph))
-    if path.is_file():
-        table = pd.read_csv(path)
-        degrees = dict(zip(table["node"], table["degree"], strict=True))
-        if set(degrees) != set(nodes) or any(degrees[n] != graph.degree(n) for n in nodes):
-            raise ValueError(f"{path} does not match the core graph")
-        if "leverage" not in table:
-            raise ValueError(f"{path} has no leverage column")
-        return str(path.resolve())
-    target = results_dir / "graphs" / EMPIRICAL / "centrality.csv"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    _centrality_table(graph, nodes).to_csv(target, index=False)
-    return target.relative_to(results_dir).as_posix()
-
-
 def _saved_assortativity(path: Path, graph: nx.Graph) -> float | None:
     """Return saved core assortativity when the metrics describe this core's input."""
     if not path.is_file():
         return None
     metrics = json.loads(path.read_text(encoding="utf-8"))
-    checksum = graph.graph.get("input_sha256")
-    same_input = checksum is not None and metrics.get("input", {}).get("sha256") == checksum
+    input_checksum = graph.graph.get("input_sha256")
+    same_input = (
+        input_checksum is not None and metrics.get("input", {}).get("sha256") == input_checksum
+    )
     same_core = metrics.get("core", {}).get("edges") == graph.number_of_edges()
     value = metrics.get("metrics", {}).get("degree_assortativity")
     return float(value) if same_input and same_core and value is not None else None
@@ -712,15 +606,3 @@ def _load_scores(path: Path, nodes: tuple[str, ...]) -> dict[str, dict[str, floa
 
 def _resolve(root: Path, path: str) -> Path:
     return Path(path) if Path(path).is_absolute() else root / path
-
-
-def _load_nodes(path: Path, graph: nx.Graph) -> tuple[str, ...]:
-    nodes = tuple(json.loads(path.read_text(encoding="utf-8")))
-    if nodes != tuple(sorted(graph)):
-        raise ValueError(f"{path} does not match the core graph's node order")
-    return nodes
-
-
-def _sha256(path: Path) -> str:
-    with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()

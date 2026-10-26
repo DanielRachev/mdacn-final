@@ -11,11 +11,12 @@ import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from scipy.sparse import load_npz, save_npz
+from scipy.sparse import load_npz
 
 from mdacn.centrality_pipeline import save_centrality_scores
-from mdacn.data import build_matrices, export_graph
+from mdacn.data import build_matrices, export_graph, save_matrices
 from mdacn.evaluation import compute_opinion_gcc
+from mdacn.interventions import select_contrarians, simulate_ico
 from mdacn.rewiring import (
     accept_swap,
     homophily_bounds,
@@ -257,30 +258,23 @@ def test_critical_budgets():
 
 
 def write_inputs(tmp_path, graph=None):
-    """Save a core graph plus the processed matrices and node order next to it."""
+    """Save a core graph with the characterise and centrality exports beside it."""
     graph = two_communities() if graph is None else graph
-    graph_path, nodes_path = tmp_path / "core.graphml", tmp_path / "nodes.json"
+    graph_path = tmp_path / "core.graphml"
     export_graph(graph, graph_path)
-    network = build_matrices(graph)
-    save_npz(tmp_path / "unsigned.npz", network.unsigned)
-    save_npz(tmp_path / "signed.npz", network.signed)
-    nodes_path.write_text(json.dumps(network.nodes))
-    return graph, graph_path, nodes_path
-
-
-def saved_inputs(tmp_path):
-    """Keep tests away from the real data/processed and results/topology files."""
-    return dict(centrality_path=tmp_path / "centrality.csv", metrics_path=tmp_path / "m.json")
+    save_matrices(build_matrices(graph), graph_path)
+    save_centrality_scores(graph_path)
+    return graph, graph_path
 
 
 def test_pipeline_exports_and_paired_ico(tmp_path):
-    graph, graph_path, nodes_path = write_inputs(tmp_path)
+    graph, graph_path = write_inputs(tmp_path)
     specs = (
         RewiringSpec("reference", None, "unbiased"),
         RewiringSpec("insular_strict", "insular", "strict"),
     )
-    kwargs = dict(nodes_path=nodes_path, specs=specs, replicates=2, attempts_per_edge=5, seed=7)
-    kwargs.update(saved_inputs(tmp_path))
+    kwargs = dict(specs=specs, replicates=2, attempts_per_edge=5, seed=7)
+    kwargs["metrics_path"] = tmp_path / "m.json"
     summary = run_rewiring_experiment(graph_path, results_dir=tmp_path / "rw", **kwargs)
     again = run_rewiring_experiment(graph_path, results_dir=tmp_path / "rw2", **kwargs)
     pd.testing.assert_frame_equal(summary.drop(columns="path"), again.drop(columns="path"))
@@ -299,11 +293,13 @@ def test_pipeline_exports_and_paired_ico(tmp_path):
         assert scores["node"].tolist() == list(original.nodes)
         assert (scores["degree"] == degrees["degree_after"]).all()
     assert not (tmp_path / "rw" / "nodes.json").exists()
-    # No saved empirical scores were supplied, so they are computed once and saved.
-    assert (tmp_path / "rw" / "graphs" / "empirical" / "centrality.csv").is_file()
+    # Empirical scores come from the centrality stage; rewiring never recomputes them.
+    assert not (tmp_path / "rw" / "graphs" / "empirical").exists()
+    metadata = json.loads((tmp_path / "rw" / "metadata.json").read_text())
+    assert metadata["empirical_centrality"] == str((tmp_path / "centrality.csv").resolve())
 
     raw, phi_c, comparisons = run_rewired_ico_experiment(
-        tmp_path,
+        graph_path,
         rewired_dir=tmp_path / "rw",
         results_dir=tmp_path / "ico",
         budgets=(0.0, 0.25, 0.5),
@@ -334,75 +330,105 @@ def test_pipeline_exports_and_paired_ico(tmp_path):
         assert (tmp_path / "ico" / name).is_file()
 
 
+def test_rewired_ico_matches_the_shared_signed_simulator(tmp_path):
+    graph, graph_path = write_inputs(tmp_path)
+    run_rewiring_experiment(
+        graph_path,
+        metrics_path=tmp_path / "m.json",
+        results_dir=tmp_path / "rw",
+        specs=(RewiringSpec("reference", None, "unbiased"),),
+        replicates=1,
+        attempts_per_edge=2,
+    )
+    raw, _, _ = run_rewired_ico_experiment(
+        graph_path, rewired_dir=tmp_path / "rw", results_dir=tmp_path / "ico", initializations=2
+    )
+    network = build_matrices(graph)
+    states = np.load(tmp_path / "ico" / "final_states.npz")
+    unpack = lambda key: np.unpackbits(states[key], axis=1, count=int(states["n_nodes"]))  # noqa: E731
+    baselines, finals = unpack("baseline"), unpack("final")
+    row = raw.loc[(raw["graph"] == "empirical") & (raw["budget"] > 0)].iloc[0]
+    baseline = np.where(baselines[row.baseline_index] == 1, 1, -1).astype(np.int8)
+    contrarians = select_contrarians(
+        network.nodes,
+        row.budget,
+        strategy=row.strategy,
+        seed=int(row.target_seed),
+        scores=dict(zip(network.nodes, [graph.degree(n) for n in network.nodes], strict=True))
+        if row.strategy == "degree"
+        else None,
+    )
+    expected = simulate_ico(
+        network.signed,
+        baseline,
+        nodes=network.nodes,
+        contrarians=contrarians,
+        max_steps=1000,
+        model="signed",
+    )
+    assert np.array_equal(np.where(finals[row.state_index] == 1, 1, -1), expected.final_state)
+    assert row.stop_reason == expected.stop_reason
+
+
 def test_pipeline_reuses_saved_empirical_outputs(tmp_path):
     graph = two_communities()
     graph.graph["input_sha256"] = "abc"
-    graph, graph_path, nodes_path = write_inputs(tmp_path, graph)
-    inputs = saved_inputs(tmp_path)
-    nodes = sorted(graph)
-    scores = pd.DataFrame(
-        {"node": nodes, "degree": [graph.degree(n) for n in nodes], "leverage": 0.0}
-    )
-    scores.to_csv(inputs["centrality_path"], index=False)
+    graph, graph_path = write_inputs(tmp_path, graph)
+    metrics_path = tmp_path / "m.json"
     metrics = {
         "input": {"sha256": "abc"},
         "core": {"edges": graph.number_of_edges()},
         "metrics": {"degree_assortativity": 0.123},
     }
-    inputs["metrics_path"].write_text(json.dumps(metrics))
+    metrics_path.write_text(json.dumps(metrics))
     specs = (RewiringSpec("reference", None, "unbiased"),)
     summary = run_rewiring_experiment(
         graph_path,
-        nodes_path=nodes_path,
+        metrics_path=metrics_path,
         results_dir=tmp_path / "rw",
         specs=specs,
         replicates=1,
         attempts_per_edge=2,
-        **inputs,
     )
     assert summary.loc[0, "degree_assortativity"] == 0.123
-    assert not (tmp_path / "rw" / "graphs" / "empirical").exists()
-    metadata = json.loads((tmp_path / "rw" / "metadata.json").read_text())
-    assert metadata["empirical_centrality"] == str(inputs["centrality_path"].resolve())
 
-    scores.assign(degree=scores["degree"] + 1).to_csv(inputs["centrality_path"], index=False)
-    with pytest.raises(ValueError, match="does not match"):
+    with (tmp_path / "centrality.csv").open("a") as file:
+        file.write("\n")
+    with pytest.raises(ValueError, match="Centrality table changed"):
         run_rewiring_experiment(
-            graph_path, nodes_path=nodes_path, results_dir=tmp_path / "rw2", specs=specs, **inputs
+            graph_path, metrics_path=metrics_path, results_dir=tmp_path / "rw2", specs=specs
         )
     with pytest.raises(ValueError, match="changed since rewiring"):
-        run_rewired_ico_experiment(tmp_path, rewired_dir=tmp_path / "rw", initializations=1)
+        run_rewired_ico_experiment(graph_path, rewired_dir=tmp_path / "rw", initializations=1)
 
 
 def test_ico_rejects_a_different_node_order(tmp_path):
-    _, graph_path, nodes_path = write_inputs(tmp_path)
+    _, graph_path = write_inputs(tmp_path)
     run_rewiring_experiment(
         graph_path,
-        nodes_path=nodes_path,
+        metrics_path=tmp_path / "m.json",
         results_dir=tmp_path / "rw",
         specs=(RewiringSpec("reference", None, "unbiased"),),
         replicates=1,
         attempts_per_edge=2,
-        **saved_inputs(tmp_path),
     )
+    nodes_path = tmp_path / "nodes.json"
     nodes_path.write_text(json.dumps(sorted(json.loads(nodes_path.read_text()), reverse=True)))
     with pytest.raises(ValueError, match="node order"):
-        run_rewired_ico_experiment(tmp_path, rewired_dir=tmp_path / "rw", initializations=1)
+        run_rewired_ico_experiment(graph_path, rewired_dir=tmp_path / "rw", initializations=1)
 
 
-def test_pipeline_rejects_mismatched_nodes(tmp_path):
-    _, graph_path, nodes_path = write_inputs(tmp_path)
-    nodes_path.write_text(json.dumps(["other"]))
-    with pytest.raises(ValueError, match="node order"):
+def test_pipeline_rejects_changed_node_order(tmp_path):
+    _, graph_path = write_inputs(tmp_path)
+    (tmp_path / "nodes.json").write_text(json.dumps(["other"]))
+    with pytest.raises(ValueError, match="Saved nodes changed"):
         run_rewiring_experiment(
-            graph_path, nodes_path=nodes_path, results_dir=tmp_path / "rw", **saved_inputs(tmp_path)
+            graph_path, metrics_path=tmp_path / "m.json", results_dir=tmp_path / "rw"
         )
 
 
 def test_rewire_cli(tmp_path):
-    _, graph_path, _ = write_inputs(tmp_path)
-    # The CLI reads the centrality stage's export beside the graph, as other stages do.
-    save_centrality_scores(graph_path)
+    _, graph_path = write_inputs(tmp_path)
     command = [sys.executable, "-m", "mdacn", "rewire", "--graph", str(graph_path)]
     command += ["--results-dir", str(tmp_path / "rw"), "--metrics", str(tmp_path / "m.json")]
     command += ["--replicates", "1", "--attempts-per-edge", "2"]
@@ -410,7 +436,7 @@ def test_rewire_cli(tmp_path):
     subprocess.run(command, check=True, capture_output=True)
     summary = pd.read_csv(tmp_path / "rw" / "rewiring_summary.csv")
     assert len(summary) == 1 + 1 + (2 + 1) + (2 + 2)
-    command = [sys.executable, "-m", "mdacn", "rewire-ico", "--processed-dir", str(tmp_path)]
+    command = [sys.executable, "-m", "mdacn", "rewire-ico", "--graph", str(graph_path)]
     command += ["--rewired-dir", str(tmp_path / "rw"), "--results-dir", str(tmp_path / "ico")]
     command += ["--initializations", "1", "--budgets", "0", "0.5", "--max-steps", "20"]
     subprocess.run(command, check=True, capture_output=True)

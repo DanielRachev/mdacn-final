@@ -27,19 +27,51 @@ Checks in code:
 - B: `validate_rewiring` in `src/mdacn/rewiring.py`, run on every exported graph.
 - C: `validate_aggregate_preservation` in `src/mdacn/temporal_nulls.py`.
 
+## Controls in the signed-structure analyses
+
+The incident-sign, triad, and P-O-X analyses reuse A, B, and C and add two
+controls.
+
+| Analysis | Controls |
+| --- | --- |
+| `incident-signs` | A (1,000 shuffles); exact hypergeometric tail per node under A |
+| `signed-triads` | A (same seeds); B unbiased reference replicates; Erdős–Rényi (descriptive) |
+| `temporal-balance` | Post-label shuffle; C in `global` mode |
+
+| Property | Post-label shuffle | Erdős–Rényi G(N, M) |
+| --- | --- | --- |
+| Node set and `N` | ✓ | ✓ |
+| Edge count and global sign counts | event timing and endpoints ✓; number of negative posts ✓ | ✓ (signs placed at random) |
+| Unsigned topology and degrees | ✓ | ✗ (different degree sequence and clustering) |
+| One label per source post | ✓ (labels move with whole posts) | — |
+| Per-node signed activity | ✗ | ✗ |
+
+The post-label shuffle is the event-level analogue of A: it permutes
+`LINK_SENTIMENT` across source posts, because every row of a post shares one label.
+Erdős–Rényi is descriptive only: it changes topology and sign placement together,
+so it cannot separate them. B's unbiased reference keeps each node's positive and
+negative degree, which A does not; `signed-triads` checks this for every replicate
+it loads.
+
+Checks in code:
+
+- Post-label shuffle: `tests/test_temporal_balance.py::test_post_label_shuffle_keeps_posts_consistent`.
+- Erdős–Rényi: `tests/test_signed_triads.py::test_erdos_renyi_keeps_size_and_sign_multiset`.
+- B as used by `signed-triads`: `signed_degrees_preserved` in `results/signed_triads/metadata.json`.
+
 ## Null Model B: degree-preserving homophily rewiring
 
-**Move.** Pick a uniform edge, then a uniform second edge with the same sign.
-Flip each edge's orientation with probability 1/2, then rewire `(u, v), (x, y)`
+**Move**: Pick a uniform edge, then a uniform second edge with the same sign.
+Flip each edge's orientation with probability 1/2 (to allow A-to-B, as well as B-to-A node extraction, because the node order in the edge is fixed), then rewire `(u, v), (x, y)`
 to `(u, y), (x, v)`. Reject self loops, duplicate edges, and unchanged pairs.
 Without the orientation flips, stored endpoint order would decide which of the two
 possible rewirings is proposed.
 
-**Signs.** Only same-sign edges swap. Each edge record (`sign`, `n_positive`,
+**Signs**: Only same-sign edges swap. Each edge record (`sign`, `n_positive`,
 `n_negative`) follows its first endpoint: `(u, y)` takes the record of `(u, v)`,
 and `(x, v)` takes the record of `(x, y)`. Node `n_interactions` is recomputed.
 
-**Steering.** Community labels are the fixed Louvain labels of the empirical core;
+**Steering**: Community labels are the fixed Louvain labels of the empirical core;
 simulated opinions play no role.
 
 - Insular: `h = positive_within + negative_between`.
@@ -54,13 +86,13 @@ A swap changes `h` by at most 2. Zero-sign edges are swapped without steering.
 | `non_worsening` | `delta_h >= 0` |
 | `metropolis` | `delta_h >= 0`, else with probability `exp(beta * delta_h)` |
 
-**Stopping.** Each graph stops when its tracked score changes by at most
+**Stopping**: Each graph stops when its tracked score changes by at most
 `tolerance * (positive + negative edges)` over a window of attempts, or at the
 attempt cap. The tracked score is `h` for steered runs and the number of
 within-community signed edges for the reference. Metadata records whether each
 graph converged.
 
-**Calibration.** One replicate per rule on the 10-core (seed 0, window `2|E|`,
+**Calibration**: One replicate per rule on the 10-core (seed 0, window `2|E|`,
 tolerance 0.005, cap `50|E|`). Values are achieved `h` as a fraction of its bound;
 the empirical core scores 0.531 insular and 0.478 integrated, the reference 0.229
 and 0.775.
@@ -80,29 +112,31 @@ beta 4 0.822). Non-worsening keeps drifting through neutral moves and reached th
 `50|E|` cap at 0.893, so the default cap is `100|E|`. Every calibrated graph stayed
 connected.
 
-**Feasibility.** `homophily_bounds` gives upper bounds from degrees and community
+**Feasibility**: `homophily_bounds` gives upper bounds from degrees and community
 sizes: node `i` has at most `min(d_i^s, |C_i| - 1)` internal edges of sign `s`.
 Achieved `h` is reported as a fraction of this bound; the bound need not be
 attainable.
 
-**Evaluation.** `rewire-ico` replays the same initial states on every graph,
+**Evaluation**: `rewire-ico` replays the same initial states on every graph,
 settles signed NCO, pins contrarians at +1, and measures `g_minus` on the fixed
 empirical unsigned core with the full core `N`, for every graph (shared
 convention). Baseline and terminal states are saved in `final_states.npz`. `Phi_c` is each run's first tested budget with
 `g_minus < 0.5`, or "not reached". Degree targeting pins the same nodes on every
 graph because degrees are preserved.
 
-**Saved inputs.** Nothing computed earlier is recomputed. `rewire` reads the core
-graph, `nodes.json`, the empirical `centrality.csv`, and the empirical assortativity
-from `metrics.json`; it computes missing empirical scores once and saves them under
-`graphs/empirical`. Each rewired graph saves its own degree and leverage scores.
+**Saved inputs**: Nothing computed earlier is recomputed. `rewire` reads the core
+graph, the matrices and `nodes.json` from `characterise`, and the empirical
+`centrality.csv` from `centrality`; a missing or changed input is an error naming the
+stage to rerun. The empirical degree assortativity comes from `metrics.json` when it
+describes this core, and is otherwise computed from the core. Each rewired graph
+saves its own degree and leverage scores.
 `rewire-ico` loads the empirical matrices from `data/processed`, the rewired
 matrices and all scores from `results/rewiring`, and checks `nodes.json` and the
 empirical score file against the hashes recorded by `rewire`.
 
 ## Null Model B: Phi_c findings
 
-**Setup.** Default run with `--seed 0`: the empirical 10-core, the unbiased reference,
+**Setup**: Default run with `--seed 0`: the empirical 10-core, the unbiased reference,
 and 10 steered configurations with 5 replicates each (55 rewired graphs). Each graph
 ran 20 shared initial states at `f = 0.5`, degree and random targeting, and budgets
 0, 0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.25. `g_minus` is measured on the fixed
@@ -112,7 +146,7 @@ empirical core.
   validation.
 - All 17,920 baselines and ICO runs reached steady states, so none were excluded.
 
-**Already-fragmented baselines.** At `f = 0.5`, many initial states end with
+**Already-fragmented baselines**: At `f = 0.5`, many initial states end with
 `g_minus < 0.5` before any intervention, so their `Phi_c` is 0:
 
 - empirical: 8 of 20;
@@ -147,39 +181,37 @@ bootstrap intervals over initial states and replicates:
 | insular beta 4 minus reference | -0.228 | -0.340 to -0.114 |
 | integrated strict minus reference | -0.002 | -0.071 to 0.069 |
 
-**Interpretation.** These are observations from one initial fraction and a coarse
+**Interpretation**: These are observations from one initial fraction and a coarse
 budget grid, not established effects.
 
-- **The degree sequence alone does not reproduce the empirical result.** The
+- **The degree sequence alone does not reproduce the empirical result**: The
   degree-preserving reference needs twice the empirical budget (0.10 vs 0.05).
-- **Homophily at the empirical level does.** Insular beta 2 reaches about the
+- **Homophily at the empirical level does**: Insular beta 2 reaches about the
   empirical homophily and gives the empirical `Phi_c` and `g_minus`. This suggests
   the community/sign placement explains the gap between empirical and reference.
-- **Strong insularity makes the negative cluster easier to break.** Only
+- **Strong insularity makes the negative cluster easier to break**: Only
   configurations near the insular bound (0.83 to 0.90) let random contrarians reach
   the threshold, in about 40% of polarized runs. This is a threshold effect: for
   random targeting at `Phi = 0.25`, the mean `g_minus` differences from the reference
   have 95% intervals that include zero (e.g. strict -0.047, -0.134 to 0.043).
-- **Integrated configurations mostly behave like the reference.** Exception:
+- **Integrated configurations mostly behave like the reference**: Exception:
   integrated non-worsening and beta 2 cross at 0.05 in many runs. This pattern is
   observed, not explained.
 
-**Limitations.**
+**Limitations**
 
 - Only `f = 0.5` was run.
 - Most `Phi_c` differences are one grid step (0.03, 0.05, 0.10). A finer grid between
   0.03 and 0.10 would sharpen them.
 - Reference comparisons pair replicates by index, which is a convention, not a
   matched design.
-- Signed ICO uses a local copy of the signed simulator until the shared version is
-  merged.
 - Leverage, betweenness, eigenvector, and signed-leverage targeting were not run.
 
-**Reproduce.**
+**Reproduce**
 
 ```bash
-uv run python -m mdacn rewire --metrics results/metrics.json --seed 0
-uv run python -m mdacn rewire-ico --seed 0
+uv run python -m mdacn rewire
+uv run python -m mdacn rewire-ico
 ```
 
 Outputs are in `results/rewiring/` and `results/rewiring_ico/` (`phi_c_runs.csv`,

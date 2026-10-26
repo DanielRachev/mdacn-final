@@ -1,4 +1,4 @@
-"""Command-line entry points for preprocessing, dynamics, and impact analysis."""
+"""Command-line entry points for preprocessing, dynamics, null models, and analyses."""
 
 import argparse
 from pathlib import Path
@@ -80,7 +80,32 @@ def main() -> None:
         "rewire-ico": (
             "Compare signed ICO Phi_c on the empirical and rewired graphs",
             config.REWIRED_ICO,
-            {"--processed-dir": paths["processed"], "--rewired-dir": paths["rewire"]},
+            {"--graph": paths["core"], "--rewired-dir": paths["rewire"]},
+        ),
+        "incident-signs": (
+            "Compare the negative incident ratio with sign-shuffled cores",
+            config.INCIDENT_SIGNS,
+            {"--graph": paths["core"]},
+        ),
+        "signed-triads": (
+            "Count signed triads and compare balance with null models",
+            config.SIGNED_TRIADS,
+            {"--graph": paths["core"], "--rewired-dir": paths["rewire"] / "graphs" / "reference"},
+        ),
+        "temporal-balance": (
+            "Predict triangle closing signs from earlier wedge signs (P-O-X)",
+            config.TEMPORAL_BALANCE,
+            {"--input": paths["dataset"], "--graph": paths["core"]},
+        ),
+        "directed-roles": (
+            "Directed roles, reciprocity, and bridges; export incident_signs.csv",
+            {},
+            {"--input": paths["dataset"], "--graph": paths["core"]},
+        ),
+        "label-audit": (
+            "Audit post labels and repeated rows; count rows at each filtering stage",
+            {},
+            {"--input": paths["dataset"], "--graph": paths["core"]},
         ),
     }
     for name, (help_text, settings, inputs) in configured.items():

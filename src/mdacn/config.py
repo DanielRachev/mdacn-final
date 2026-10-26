@@ -59,6 +59,11 @@ def stage_paths() -> dict:
         "node-impact": results / "node_impact",
         "rewire": results / "rewiring",
         "rewire-ico": results / "rewiring_ico",
+        "incident-signs": results / "incident_signs",
+        "signed-triads": results / "signed_triads",
+        "temporal-balance": results / "temporal_balance",
+        "directed-roles": results / "directed_roles",
+        "label-audit": results / "label_audit",
     }
 
 
@@ -86,6 +91,19 @@ REWIRED_ICO = {
     "seed": 0,
     "max_steps": SIMULATION["max_steps"],
 }
+
+
+# Signed-structure analyses. Sign shuffles share their seeds across incident signs
+# and triads, so both compare against the same shuffled cores.
+INCIDENT_SIGNS = {
+    "realizations": 1000,
+    "seed": 0,
+    "bins": "width",
+    "bin_width": 0.025,
+    "n_bins": 20,
+}
+SIGNED_TRIADS = {"realizations": 1000, "er_realizations": 20, "seed": 0}
+TEMPORAL_BALANCE = {"realizations": 200, "seed": 0, "frequency": "Q"}
 
 
 # Node-impact overrides and settings specific to that workflow.

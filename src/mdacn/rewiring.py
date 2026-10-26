@@ -8,6 +8,8 @@ from typing import Literal
 import networkx as nx
 import numpy as np
 
+from mdacn.data import community_labels
+
 Target = Literal["insular", "integrated"]
 Rule = Literal["unbiased", "strict", "non_worsening", "metropolis"]
 RejectionReason = Literal["pool_too_small", "self_loop", "no_op", "duplicate", "rule"]
@@ -31,7 +33,7 @@ def homophily_counts(graph: nx.Graph, *, community: str = "community") -> dict[s
     Return {sign}_within and {sign}_between for positive, negative, and zero
     edges, plus the steering scores h_insular and h_integrated.
     """
-    labels = _labels(graph, community)
+    labels = community_labels(graph, community)
     counts = Counter()
     for u, v, sign in graph.edges(data="sign"):
         place = "within" if labels[u] == labels[v] else "between"
@@ -53,7 +55,7 @@ def homophily_bounds(graph: nx.Graph, *, community: str = "community") -> dict[s
     external edges of sign s. Each bound is halved and capped at the sign's edge
     count. The bounds hold for any same-sign rewiring; they need not be attainable.
     """
-    labels = _labels(graph, community)
+    labels = community_labels(graph, community)
     sizes = Counter(labels.values())
     n_nodes = len(graph)
     signed_degree = {node: Counter() for node in graph}
@@ -99,12 +101,11 @@ def rewire(
     window: int = 0,
     tolerance: float = 0.0,
 ) -> RewiringResult:
-    """Owner: Jakub. Apply attempted same-sign double-edge swaps to a copy of graph.
+    """Apply attempted same-sign double-edge swaps to a copy of graph.
 
     Each attempt picks a uniform edge, then a second uniform edge with the same sign,
     and rewires (u, v), (x, y) to (u, y), (x, v). Swaps that create a self loop or a
-    duplicate edge, or that leave both edges unchanged, are rejected. Every node keeps
-    its unsigned degree and its positive, negative, and zero degree.
+    duplicate edge, or that leave both edges unchanged, are rejected. Every node keeps its unsigned degree and its positive, negative, and zero degree.
 
     Edge records (sign, n_positive, n_negative) follow the first endpoint's stub:
     (u, y) takes the record of (u, v), and (x, v) the record of (x, y).
@@ -112,7 +113,7 @@ def rewire(
     target and rule steer the positive and negative pools toward the insular or
     integrated score; zero-sign edges carry no signed influence and are always
     swapped without steering. rule='unbiased' accepts every valid swap and is the
-    degree-preserving reference. beta is required only for rule='metropolis'.
+    degree-preserving reference. beta is required only for rule='metropolis' (which allows short-term decrease of the score).
     checkpoint_interval > 0 records counts every that many attempts.
 
     attempts is the maximum. With window > 0, the run also stops once the tracked
@@ -127,7 +128,7 @@ def rewire(
         raise ValueError("tolerance must be finite and non-negative")
     if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
         raise ValueError("Rewiring requires a simple undirected graph without self loops")
-    labels_by_node = _labels(graph, community)
+    labels_by_node = community_labels(graph, community)
     nodes = tuple(sorted(graph))
     index = {node: i for i, node in enumerate(nodes)}
     labels = [labels_by_node[node] for node in nodes]
@@ -271,13 +272,13 @@ def validate_rewiring(
 
     Checked: simple graph, node set, community labels, each node's unsigned and
     positive/negative/zero degree, global sign counts, and the multiset of edge
-    records. Connectivity is reported, not enforced.
+    records.
     """
     if rewired.is_directed() or rewired.is_multigraph() or nx.number_of_selfloops(rewired):
         raise AssertionError("Rewired graph is not simple and undirected")
     if set(original) != set(rewired):
         raise AssertionError("Node set changed")
-    if _labels(original, community) != _labels(rewired, community):
+    if community_labels(original, community) != community_labels(rewired, community):
         raise AssertionError("Community labels changed")
     if dict(original.degree()) != dict(rewired.degree()):
         raise AssertionError("Unsigned degree changed")
@@ -316,13 +317,6 @@ def degree_table(original: nx.Graph, rewired: nx.Graph) -> list[dict]:
             row[f"{name}_after"] = after[node][sign]
         rows.append(row)
     return rows
-
-
-def _labels(graph: nx.Graph, community: str) -> dict:
-    missing = [node for node in graph if community not in graph.nodes[node]]
-    if missing:
-        raise ValueError(f"Nodes missing '{community}' labels: {missing[:5]}")
-    return {node: graph.nodes[node][community] for node in graph}
 
 
 def _signed_degrees(graph: nx.Graph) -> dict:
