@@ -13,6 +13,7 @@ from mdacn.artifacts import checksum, write_json
 from mdacn.combined_plots import (
     plot_backfire,
     plot_ico_curves,
+    plot_ico_delta,
     plot_impact_correlations,
     plot_phase_transition,
     plot_phi_c,
@@ -496,6 +497,7 @@ def run_combined_results(
         plot_raw_fractions(raw, output_dir / "raw_fractions.png")
     if not ico_summary.empty:
         plot_ico_curves(ico_summary, output_dir / "ico_g_minus.png", fraction=fraction)
+        plot_ico_delta(ico_summary, output_dir / "ico_delta.png", fraction=fraction)
         plot_backfire(ico_summary, output_dir / "backfire.png", fraction=fraction)
     if not phi_c.empty:
         plot_phi_c(phi_c, output_dir / "phi_c_by_strategy.png")

@@ -177,6 +177,54 @@ def plot_ico_curves(summary: pd.DataFrame, path: Path, *, fraction: float = 0.5)
     _save(fig, path)
 
 
+def plot_ico_delta(summary: pd.DataFrame, path: Path, *, fraction: float = 0.5) -> None:
+    """Save the paired change in opposing cluster size against budget."""
+    if summary.empty or "mean_delta_g_minus" not in summary:
+        return
+    chosen = _closest(summary["f"].unique(), fraction)
+    if chosen is None:
+        return
+    subset = summary.loc[np.isclose(summary["f"].astype(float), chosen)]
+    models = sorted(subset["model"].unique())
+    if not models:
+        return
+    fig, axes = plt.subplots(1, len(models), figsize=(6 * len(models), 4.8), sharey=True)
+    axes = np.atleast_1d(axes)
+    for axis, model in zip(axes, models, strict=True):
+        model_subset = subset.loc[subset["model"] == model]
+        for index, strategy in enumerate(sorted(model_subset["strategy"].unique())):
+            group = model_subset.loc[model_subset["strategy"] == strategy].sort_values("budget")
+            if group.empty:
+                continue
+            color = _strategy_color(str(strategy), index)
+            axis.plot(
+                group["budget"],
+                group["mean_delta_g_minus"],
+                "o-",
+                markersize=3,
+                linewidth=1.4,
+                color=color,
+                label=_strategy_label(str(strategy)),
+            )
+            spread = group["std_delta_g_minus"].fillna(0).to_numpy(float)
+            axis.fill_between(
+                group["budget"].to_numpy(float),
+                group["mean_delta_g_minus"].to_numpy(float) - spread,
+                group["mean_delta_g_minus"].to_numpy(float) + spread,
+                color=color,
+                alpha=0.08,
+                linewidth=0,
+            )
+        axis.axhline(0, color="0.5", linestyle="--", linewidth=1)
+        axis.set_title(f"{model.capitalize()} model")
+        axis.set_xlabel("Contrarian budget Phi")
+        axis.grid(alpha=0.2)
+        axis.legend(fontsize=7)
+    axes[0].set_ylabel("Paired change in g_minus")
+    fig.suptitle(f"ICO paired effect at f = {chosen:g}")
+    _save(fig, path)
+
+
 def plot_phi_c(phi_c: pd.DataFrame, path: Path) -> None:
     """Save Phi_c against the initial fraction, one panel per model."""
     if phi_c.empty or "mean_phi_c" not in phi_c:
@@ -184,6 +232,8 @@ def plot_phi_c(phi_c: pd.DataFrame, path: Path) -> None:
     models = sorted(phi_c["model"].unique())
     if not models:
         return
+    finite = phi_c["mean_phi_c"].dropna()
+    upper = max(0.05, float(finite.max()) * 1.2) if len(finite) else 0.1
     fig, axes = plt.subplots(1, len(models), figsize=(6 * len(models), 4.8), sharey=True)
     axes = np.atleast_1d(axes)
     for axis, model in zip(axes, models, strict=True):
@@ -203,7 +253,7 @@ def plot_phi_c(phi_c: pd.DataFrame, path: Path) -> None:
             )
         axis.set_title(f"{model.capitalize()} model")
         axis.set_xlabel("Initial negative fraction f")
-        axis.set_ylim(-0.01, 1.01)
+        axis.set_ylim(-0.01, upper)
         axis.grid(alpha=0.2)
         axis.legend(fontsize=7)
     axes[0].set_ylabel("Critical budget Phi_c")
