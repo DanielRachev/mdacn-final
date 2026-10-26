@@ -235,6 +235,7 @@ def test_combined_report_writes_available_sections(tmp_path):
         "sensitivity_strategy_ranking.csv",
         "phase_transition_g_minus.png",
         "ico_g_minus.png",
+        "ico_delta.png",
         "phi_c_by_strategy.png",
         "temporal_effects.png",
         "impact_correlations.png",

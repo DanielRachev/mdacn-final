@@ -89,6 +89,7 @@ Figures:
 | `phase_transition_g_plus.png` | Positive cluster fraction against `f` |
 | `raw_fractions.png` | Raw negative and positive opinion fractions |
 | `ico_g_minus.png` | Opposing cluster fraction against `Phi` by strategy |
+| `ico_delta.png` | Paired change in opposing cluster size against `Phi` |
 | `phi_c_by_strategy.png` | `Phi_c` against `f` by strategy |
 | `backfire.png` | Backfire and repelled-neighbour shares |
 | `stop_reasons.png` | Stop-reason composition |
@@ -99,9 +100,9 @@ Figures:
 ## Missing inputs
 
 A missing file does not stop the report. Each one prints a warning and is
-recorded in `inputs.json` and `warnings.txt`. A section is skipped when its
-inputs are absent. If no input at all is present, the command stops with an
-error naming the producing stages.
+recorded in `inputs.json` and `warnings.txt`. The corresponding table is written
+empty and that section's figures are skipped. If no input at all is present, the
+command stops with an error naming the producing stages.
 
 Some inputs are not produced by a stage on `main`:
 
@@ -113,6 +114,41 @@ Some inputs are not produced by a stage on `main`:
 
 In those cases, copy the saved directory from the owner, or run the producing
 branch. The manifest names exactly what is missing.
+
+## Measured run
+
+Run on 26 October 2026 against the default connected 10-core, with the ICO
+sweep at `f = 0.3, 0.4, 0.5, 0.6, 0.7` and all seven strategies.
+
+**Available:** NCO, sign-shuffle, ICO, sensitivity, and the extraction
+comparison. Seven inputs were present.
+
+**Missing:** temporal, node-impact, rewiring, label audit, directed roles, and
+incident signs. Thirteen entries are listed in `inputs.json` and `warnings.txt`.
+
+The available results:
+
+- NCO and sign-shuffle have the phase transition at `f` about 0.5. The
+  sign-shuffle empirical and shuffled curves nearly overlap: `g_minus` at
+  `f = 0.5` is 0.402 empirical against 0.400 shuffled, both with a realisation
+  range from about 0.005 to 0.99. The specific placement of negative signs does
+  not move the transition in this comparison.
+- One sign-shuffled run out of 1,000 stopped in a limit cycle. Every NCO and ICO
+  run reached steady state.
+- ICO at `f = 0.5` and `Phi = 0.25`, signed model: `g_minus` is 0.000 for
+  leverage, 0.004 for betweenness, 0.008 for signed leverage, 0.017 for degree,
+  0.023 for the temporal-activity bridge, 0.026 for eigenvector, and 0.570 for
+  random. The unsigned model has the same order.
+- `Phi_c` at `f = 0.5` is 0.0095 to 0.0100 for every ranked strategy and 0.020
+  to 0.022 for random. All runs reached the threshold.
+- No run backfired. The signed repelled-neighbour share is 0.008 to 0.014 for
+  the ranked strategies and 0.002 for random. Signed leverage does not reduce it
+  relative to leverage.
+- The default-core strategy order matches the sensitivity comparison.
+
+The combined report and deck still need the missing temporal, node-impact, and
+rewiring sections. Their paths are named in `inputs.json`, so they can be added
+without changing the command.
 
 ## Interpretation
 
