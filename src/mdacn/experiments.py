@@ -14,12 +14,7 @@ from mdacn.interventions import select_contrarians, simulate_ico
 
 DEFAULT_FRACTIONS = tuple(SIMULATION["fractions"])
 
-
-def shuffle_edge_signs(graph: nx.Graph, *, seed: int = 0) -> nx.Graph:
-    """Return a copy with edge signs permuted across the same topology.
-
-    The graph structure, node set, and sign multiset are preserved exactly.
-    """
+def check_graph_properties(graph: nx.Graph):
     if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
         raise ValueError("Sign shuffling requires a simple undirected graph without self loops")
 
@@ -27,6 +22,15 @@ def shuffle_edge_signs(graph: nx.Graph, *, seed: int = 0) -> nx.Graph:
     signs = [edge_data.get("sign") for _, _, edge_data in edges]
     if any(sign not in (-1, 0, 1) for sign in signs):
         raise ValueError("Every edge must have a sign of -1, 0, or +1")
+
+def shuffle_edge_signs(graph: nx.Graph, *, seed: int = 0) -> nx.Graph:
+    """Return a copy with edge signs permuted across the same topology.
+
+    The graph structure, node set, and sign multiset are preserved exactly.
+    """
+    check_graph_properties(graph)
+    edges = list(graph.edges(data=True))
+    signs = [edge_data.get("sign") for _, _, edge_data in edges]
 
     shuffled = np.random.default_rng(seed).permutation(signs)
     shuffled_graph = graph.copy()

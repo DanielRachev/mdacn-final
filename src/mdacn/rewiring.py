@@ -27,13 +27,13 @@ class RewiringResult:
     stats: dict = field(repr=False)
 
 
-def homophily_counts(graph: nx.Graph, *, community: str = "community") -> dict[str, int]:
+def homophily_counts(graph: nx.Graph) -> dict[str, int]:
     """Count edges per sign inside and between fixed community labels.
 
     Return {sign}_within and {sign}_between for positive, negative, and zero
     edges, plus the steering scores h_insular and h_integrated.
     """
-    labels = community_labels(graph, community)
+    labels = community_labels(graph)
     counts = Counter()
     for u, v, sign in graph.edges(data="sign"):
         place = "within" if labels[u] == labels[v] else "between"
@@ -48,14 +48,14 @@ def homophily_counts(graph: nx.Graph, *, community: str = "community") -> dict[s
     return result
 
 
-def homophily_bounds(graph: nx.Graph, *, community: str = "community") -> dict[str, int]:
+def homophily_bounds(graph: nx.Graph) -> dict[str, int]:
     """Return degree/community upper bounds on within and between edges per sign.
 
     Node i can have at most min(d_i^s, |C_i| - 1) internal and min(d_i^s, N - |C_i|)
     external edges of sign s. Each bound is halved and capped at the sign's edge
     count. The bounds hold for any same-sign rewiring; they need not be attainable.
     """
-    labels = community_labels(graph, community)
+    labels = community_labels(graph)
     sizes = Counter(labels.values())
     n_nodes = len(graph)
     signed_degree = {node: Counter() for node in graph}
@@ -88,6 +88,16 @@ def accept_swap(delta: int, *, rule: Rule, beta: float | None, uniform: float) -
     raise ValueError(f"Unknown rule: {rule}")
 
 
+def edge_hash(
+    a: int,
+    b: int,
+    n_nodes: int
+) -> int:
+    """Applies a simple unique hash to the edge based on the fact that n_nodes > max(a, b)"""
+
+    return min(a, b) * n_nodes + max(a, b)
+
+
 def rewire(
     graph: nx.Graph,
     *,
@@ -96,7 +106,6 @@ def rewire(
     target: Target | None = None,
     rule: Rule = "unbiased",
     beta: float | None = None,
-    community: str = "community",
     checkpoint_interval: int = 0,
     window: int = 0,
     tolerance: float = 0.0,
@@ -130,7 +139,7 @@ def rewire(
         raise ValueError("tolerance must be finite and non-negative")
     if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
         raise ValueError("Rewiring requires a simple undirected graph without self loops")
-    labels_by_node = community_labels(graph, community)
+    labels_by_node = community_labels(graph)
     nodes = tuple(sorted(graph))
     index = {node: i for i, node in enumerate(nodes)}
     labels = [labels_by_node[node] for node in nodes]
@@ -144,15 +153,15 @@ def rewire(
             raise ValueError("Every edge must have a sign of -1, 0, or +1")
         ends[sign].append([index[u], index[v]])
         records[sign].append(dict(data))
-    keys = {min(a, b) * n_nodes + max(a, b) for pool in ends.values() for a, b in pool}
+    keys = {edge_hash(a, b, n_nodes) for pool in ends.values() for a, b in pool}
     sizes = [len(ends[sign]) for sign in _POOLS]
     total = sum(sizes)
     within = {sign: sum(labels[a] == labels[b] for a, b in ends[sign]) for sign in _POOLS}
     # Score of one edge by pool: (between, within). Zero edges never contribute.
     weight = {
-        1: (0, 1) if target == "insular" else (1, 0),
-        -1: (1, 0) if target == "insular" else (0, 1),
-        0: (0, 0),
+        1: 1 if target == "insular" else -1,
+        -1: -1 if target == "insular" else 1,
+        0: 0,
     }
 
     rng = np.random.default_rng(seed)
@@ -186,11 +195,12 @@ def rewire(
                 rejections["pool_too_small"] += 1
             else:
                 other = int(second[offset] * (len(pool) - 1))
-                other += other >= position
+                if other >= position:
+                    other += 1
                 u, v = pool[position] if not flips[offset] & 1 else pool[position][::-1]
                 x, y = pool[other] if not flips[offset] & 2 else pool[other][::-1]
-                new_first = min(u, y) * n_nodes + max(u, y)
-                new_second = min(x, v) * n_nodes + max(x, v)
+                new_first = edge_hash(u, y, n_nodes)
+                new_second = edge_hash(x, v, n_nodes)
                 if u == y or x == v:
                     rejections["self_loop"] += 1
                 elif u == x or v == y:
@@ -198,22 +208,21 @@ def rewire(
                 elif new_first in keys or new_second in keys:
                     rejections["duplicate"] += 1
                 else:
-                    gain = weight[sign]
                     change = (
                         (labels[u] == labels[y])
                         + (labels[x] == labels[v])
                         - (labels[u] == labels[v])
                         - (labels[x] == labels[y])
                     )
-                    delta = (gain[1] - gain[0]) * change
+                    delta = weight[sign] * change
                     steered = sign != 0 and rule != "unbiased"
                     if steered and not accept_swap(
                         delta, rule=rule, beta=beta, uniform=uniforms[offset]
                     ):
                         rejections["rule"] += 1
                     else:
-                        keys.discard(min(u, v) * n_nodes + max(u, v))
-                        keys.discard(min(x, y) * n_nodes + max(x, y))
+                        keys.discard(edge_hash(u, v, n_nodes))
+                        keys.discard(edge_hash(x, y, n_nodes))
                         keys.add(new_first)
                         keys.add(new_second)
                         pool[position] = [u, y]
@@ -268,7 +277,7 @@ def rewire(
 
 
 def validate_rewiring(
-    original: nx.Graph, rewired: nx.Graph, *, community: str = "community"
+    original: nx.Graph, rewired: nx.Graph
 ) -> dict:
     """Raise AssertionError if rewiring broke an invariant; otherwise summarize it.
 
@@ -280,7 +289,7 @@ def validate_rewiring(
         raise AssertionError("Rewired graph is not simple and undirected")
     if set(original) != set(rewired):
         raise AssertionError("Node set changed")
-    if community_labels(original, community) != community_labels(rewired, community):
+    if community_labels(original) != community_labels(rewired):
         raise AssertionError("Community labels changed")
     if dict(original.degree()) != dict(rewired.degree()):
         raise AssertionError("Unsigned degree changed")
@@ -335,9 +344,9 @@ def _records(graph: nx.Graph) -> Counter:
 
 def _tracked_score(target: Target | None, within: dict, sizes: list[int]) -> int:
     if target == "insular":
-        return within[1] + sizes[1] - within[-1]
+        return within[1] + (sizes[1] - within[-1])
     if target == "integrated":
-        return sizes[0] - within[1] + within[-1]
+        return within[-1] + (sizes[0] - within[1])
     return within[1] + within[-1]
 
 
