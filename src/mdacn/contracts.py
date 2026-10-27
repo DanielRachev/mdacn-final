@@ -10,7 +10,15 @@ from scipy.sparse import csr_matrix
 OpinionState = NDArray[np.int8]
 Model = Literal["unsigned", "signed"]
 StopReason = Literal["steady_state", "limit_cycle", "max_steps"]
-Strategy = Literal["random", "degree", "leverage"]
+Strategy = Literal[
+    "random",
+    "degree",
+    "betweenness",
+    "eigenvector",
+    "leverage",
+    "signed_leverage",
+    "temporal_bridge",
+]
 
 
 @dataclass(frozen=True)
