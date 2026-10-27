@@ -19,17 +19,33 @@ uv run python -m mdacn setup
 uv run python -m mdacn characterise
 uv run python -m mdacn centrality
 uv run python -m mdacn targeting-scores
+uv run python -m mdacn directed-roles
 uv run python -m mdacn features
 uv run python -m mdacn nco
 uv run python -m mdacn sign-shuffle
 uv run python -m mdacn ico
 uv run python -m mdacn node-impact
+uv run python -m mdacn rewire
+uv run python -m mdacn rewire-ico
+uv run python -m mdacn incident-signs
+uv run python -m mdacn signed-triads
+uv run python -m mdacn label-audit
 uv run python -m mdacn reports
+```
+
+`directed-roles` runs before `features` because it writes `incident_signs.csv`.
+`signed-triads` runs after `rewire` to use its reference replicates; run on its own
+without them, it skips that model.
+
+Temporal P-O-X prediction is an optional extension and is not part of `run`:
+
+```bash
+uv run python -m mdacn temporal-balance
 ```
 
 | Command | Action |
 | --- | --- |
-| `run` | Run all implemented stages in the order shown above. |
+| `run` | Run the stages in the first block above, in that order (not the optional `temporal-balance`). |
 | `setup` | Download the body TSV (or title TSV with `--dataset title`); reuse an existing file. |
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
 | `compare-extractions` | Compare k = 8, 10, 12 and activity >= 100, exporting each core separately. |
@@ -42,6 +58,13 @@ uv run python -m mdacn reports
 | `ico` | Load saved matrices and scores, then save the existing unsigned random/degree/leverage budget sweep for each configured initial fraction. |
 | `node-impact` | Load saved scores and save paired single-node intervention outcomes for every core node. |
 | `reports` | Save summaries, impact statistics, and plots from stored experiment results. |
+| `rewire` | Export degree-preserving rewired graphs: unbiased reference, insular, and integrated. |
+| `rewire-ico` | Compare signed ICO Phi_c on the empirical and rewired graphs. |
+| `incident-signs` | Compare the per-node negative incident ratio, P(r_neg), and community sign rates with sign-shuffled cores. |
+| `signed-triads` | Count signed triads and the balanced fraction against sign shuffling, degree-preserving rewiring, and a descriptive Erdős–Rényi graph. |
+| `temporal-balance` | Optional, outside `run`: predict each triangle's closing-edge sign from its earlier wedge (P-O-X), against post-label and timestamp shuffles. |
+| `directed-roles` | Directed signed roles, reciprocity, `r_neg`, and signed bridge ratios; writes `incident_signs.csv` for `features`. |
+| `label-audit` | Audit post-level labels, repeated rows per `POST_ID`, and counts at each filtering stage. |
 
 Stages overwrite their generated outputs. Missing prerequisites produce an error
 naming the stage to run first. After changing the core, rerun `centrality` and
@@ -62,7 +85,9 @@ uv run python -m mdacn characterise --core-method activity_lcc --min-interaction
 Use each command's `--help` for input paths, output paths, and experiment options.
 Shared paths, core extraction settings, and simulation defaults live in
 [config.py](src/mdacn/config.py). Command-line options override these defaults;
-`NODE_IMPACT` contains the node-impact workflow's overrides.
+`NODE_IMPACT` contains the node-impact workflow's overrides, `REWIRING` and
+`REWIRED_ICO` the Null Model B settings, and `INCIDENT_SIGNS`, `SIGNED_TRIADS`, and
+`TEMPORAL_BALANCE` the signed-structure settings.
 Contributor filenames are defined in `stage_paths()` in `config.py`,
 relative to `PATHS["processed_dir"]`. The default files and required columns are:
 
@@ -74,15 +99,15 @@ relative to `PATHS["processed_dir"]`. The default files and required columns are
 | `temporal_activity.csv` | `node`, `temporal_activity` |
 
 `centrality` also exports normalized `degree_centrality` and `eigenvector`.
-`targeting-scores` writes `signed_leverage.csv` and the bridge score it consumes
-from `ICO`. The other two files still come from the pending contributor
-implementations.
+`directed-roles` writes `incident_signs.csv`. `targeting-scores` writes
+`signed_leverage.csv` and the bridge score consumed by `ico`. The temporal
+activity export still comes from the pending contributor implementation.
 All seven impact scores are required for every core node.
 The `features` stage writes the shared score table consumed by `node-impact`.
 Scores are kept unchanged. Missing or invalid required scores produce an error;
 neither `features` nor `node-impact` calculates replacements. Contributor score
-exports for incident signs/bridges and temporal activity remain prerequisites
-until their producing stages are connected to `run`.
+exports for temporal activity remain prerequisites until their producing stage
+is connected to `run`.
 
 Signed leverage is `l_signed(i) = (1/d_i) * sum_j W_ij * max(0, (d_i - d_j)/(d_i + d_j))`
 with the unsigned degree `d_i`, so zero-sign edges count in the denominator.
@@ -97,6 +122,12 @@ Simulation stages load `unsigned.npz`, `signed.npz`, and `nodes.json` produced b
 `--graph` requires the matching artifacts and `network_metadata.json` beside it.
 `ico` takes its budget grid from `ICO["budgets"]`; fractions and repeated-run
 settings use `SIMULATION`. `reports` reads its saved results without rerunning it.
+`rewire`, `rewire-ico`, and the signed-structure stages take the same `--graph`; the
+stages that read raw events also take `--input`.
+
+`signed-triads` reads Null Model B replicates from `--rewired-dir`
+(default `results/rewiring/graphs/reference`, written by the rewiring command) and
+skips that model if the directory is missing.
 
 Run Jacek's structural comparisons separately from the simulation experiments:
 
@@ -127,6 +158,26 @@ steady states, cycles, and update-limit outcomes separated. Initial states are
 paired within each experiment; sign shuffling retains its original seed schedule,
 which differs from the unsigned/signed baseline even with the same root seed.
 
+Rewiring (Null Model B) uses same-sign double-edge swaps, `(u, v), (x, y)` to
+`(u, y), (x, v)`, with random orientation. Each node keeps its unsigned and
+positive/negative/zero degree; each edge record follows its first endpoint. Swaps
+are steered toward fixed baseline communities: insular puts positive edges inside
+and negative edges between communities, integrated does the opposite. Acceptance
+rules are unbiased (the reference), strict improvement, non-worsening, and
+Metropolis with `--insular-betas` and `--integrated-betas` (defaults in `REWIRING`). Zero-sign edges are
+never steered. Each graph stops once its steering score changes by at most
+`--tolerance` times the signed edge count over a `--window-per-edge` window, or
+at `--attempts-per-edge` times the edge count. Seeds are explicit:
+each graph, initial state, and random-targeting draw has a child seed derived from
+`--seed` and a named stream. `rewire-ico` replays the same initial states on every
+graph, settles signed NCO, pins contrarians at +1, and reports per-run Phi_c, the
+first tested budget with `g_minus < 0.5`; its settings are `REWIRED_ICO`. Both
+commands reuse saved outputs: `rewire` reads the `centrality` stage's scores and the
+core assortativity from `results/topology/metrics.json`, and saves each rewired
+graph's targeting scores; `rewire-ico` loads the saved empirical matrices and all
+scores from `--rewired-dir` instead of recomputing them.
+Invariants and calibration: [Null models](docs/null_models.md).
+
 ## Data and methods
 
 - Undirected aggregation merges both directions and removes self-links.
@@ -140,6 +191,8 @@ which differs from the unsigned/signed baseline even with the same root seed.
   using maximum likelihood, AIC, and KS distance. No bootstrap goodness-of-fit test.
 
 NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_baseline.md).
+Dataset label, repeated rows per post, filtering counts, structural balance, and
+references: [Methods](docs/methods.md).
 
 ## Outputs
 
@@ -160,6 +213,13 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 | `results/sign_shuffle/` | Sign-shuffle results, component summaries/figures, metadata, and node order. |
 | `results/ico/` | `intervention_sweep.csv`, run settings and node order; `reports` adds `intervention_summary.csv` and comparison PNGs per initial fraction. |
 | `results/node_impact/` | Run config and `study/` containing frozen core features, paired outcomes, and `analysis/`. |
+| `results/rewiring/` | Rewired matrices, per-node degrees, and validation metadata per graph; summary. Node order is the original `nodes.json`. |
+| `results/rewiring_ico/` | Signed ICO runs, packed baseline/terminal states, per-run Phi_c, Phi_c summary, paired `g_minus` comparisons (fixed empirical core), and metadata. |
+| `results/incident_signs/` | Per-node `r_neg` with shuffle p-values, binned P(r_neg), summary statistics, community sign rates, figures, and metadata. |
+| `results/signed_triads/` | Triad counts per model and realization, null summaries, empirical sign patterns including zero signs, figures, and metadata. |
+| `results/temporal_balance/` | Per-triangle closures, prediction metrics overall, per wedge and per quarter, temporal null comparisons, figures, and metadata. |
+| `results/directed_roles/` | `node_roles.csv` in `nodes.json` order (directed roles, `r_neg`, bridges), reciprocity, sign fractions, community bridge rates, figures, and metadata. |
+| `results/label_audit/` | Label audit for the body file and the core, rows per post, and filtering-stage counts. |
 | `data/processed/extraction_comparison/<configuration>/` | Separate core graphs, aligned matrices and metadata, communities, and node orders for Georgi. |
 | `results/extraction_comparison/` | Comparison CSV/JSON, per-core metrics, degree distributions, tables, and figures. |
 | `results/link_sources/` | Body/title summaries, overlap CSV/JSON, and a core-membership table. |
