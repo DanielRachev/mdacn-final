@@ -236,7 +236,7 @@ def run_directed_role_analysis(
     """
     graph = load_graph(graph_path)
     nodes = tuple(sorted(graph))
-    interactions = load_interactions(input_path, post_ids=True)
+    interactions = load_interactions(input_path, include_post_id=True)
     events = filter_core_events(interactions, nodes)
     print(f"Directed roles: {len(events):,} core events among {len(nodes):,} nodes", flush=True)
 

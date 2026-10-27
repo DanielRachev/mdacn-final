@@ -18,6 +18,7 @@ Or run each stage separately. Config supplies all input and output paths:
 uv run python -m mdacn setup
 uv run python -m mdacn characterise
 uv run python -m mdacn centrality
+uv run python -m mdacn targeting-scores
 uv run python -m mdacn directed-roles
 uv run python -m mdacn features
 uv run python -m mdacn nco
@@ -45,9 +46,12 @@ uv run python -m mdacn temporal-balance
 | Command | Action |
 | --- | --- |
 | `run` | Run the stages in the first block above, in that order (not the optional `temporal-balance`). |
-| `setup` | Download the body TSV; reuse an existing file. |
+| `setup` | Download the body TSV (or title TSV with `--dataset title`); reuse an existing file. |
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
+| `compare-extractions` | Compare k = 8, 10, 12 and activity >= 100, exporting each core separately. |
+| `compare-link-sources` | Compare body/title coverage, overlap, signs, and 10-core membership. |
 | `centrality` | Run the existing degree, betweenness, eigenvector, and leverage implementations and save aligned scores. |
+| `targeting-scores` | Save the proposed signed-leverage and temporal-activity bridge scores used by `ico`. |
 | `features` | Read expected contributor output files, then merge and validate their scores. |
 | `nco` | Save unsigned and signed simulation outcomes on the exported core. |
 | `sign-shuffle` | Save paired empirical/sign-shuffled simulation outcomes. |
@@ -90,19 +94,28 @@ relative to `PATHS["processed_dir"]`. The default files and required columns are
 | File | Columns |
 | --- | --- |
 | `centrality.csv` | `node`, raw-count `degree`, `leverage`, `betweenness` |
-| `signed_leverage.csv` | `node`, `signed_leverage` |
+| `signed_leverage.csv` | `node`, `signed_leverage` (written by `targeting-scores`) |
 | `incident_signs.csv` | `node`, `negative_incident_ratio`, `signed_bridge_ratio` |
 | `temporal_activity.csv` | `node`, `temporal_activity` |
 
 `centrality` also exports normalized `degree_centrality` and `eigenvector`.
-`directed-roles` writes `incident_signs.csv`; the other two files still come from
-the pending contributor implementations.
+`directed-roles` writes `incident_signs.csv`. `targeting-scores` writes
+`signed_leverage.csv` and the bridge score consumed by `ico`. The temporal
+activity export still comes from the pending contributor implementation.
 All seven impact scores are required for every core node.
 The `features` stage writes the shared score table consumed by `node-impact`.
 Scores are kept unchanged. Missing or invalid required scores produce an error;
 neither `features` nor `node-impact` calculates replacements. Contributor score
-exports for signed leverage, incident signs/bridges, and temporal activity remain
-prerequisites until their producing stages are connected to `run`.
+exports for temporal activity remain prerequisites until their producing stage
+is connected to `run`.
+
+Signed leverage is `l_signed(i) = (1/d_i) * sum_j W_ij * max(0, (d_i - d_j)/(d_i + d_j))`
+with the unsigned degree `d_i`, so zero-sign edges count in the denominator.
+The bridge score is `sqrt(bridge_fraction * activity / max(activity))`, where the
+bridge fraction is the share of a node's neighbours outside its community.
+Activity is the core graph's `n_interactions` count unless `--activity` supplies
+a per-node export; a full-window score is retrospective. `targeting-scores` also
+writes `targeting_scores.json` with the input checksums and both definitions.
 
 Simulation stages load `unsigned.npz`, `signed.npz`, and `nodes.json` produced by
 `characterise`. Missing or changed matrix artifacts cause an error. A custom
@@ -115,6 +128,19 @@ stages that read raw events also take `--input`.
 `signed-triads` reads Null Model B replicates from `--rewired-dir`
 (default `results/rewiring/graphs/reference`, written by the rewiring command) and
 skips that model if the directory is missing.
+
+Run Jacek's structural comparisons separately from the simulation experiments:
+
+```bash
+uv run python -m mdacn compare-extractions
+uv run python -m mdacn setup --dataset title
+uv run python -m mdacn compare-link-sources
+```
+
+The extraction comparison uses seed 0 and writes to its own output directories.
+It exports each graph with its matching matrices and `nodes.json`; changing
+extraction changes the node set. The title audit measures feasibility without
+running opinion dynamics. See [measured findings and handoff](docs/extraction_comparison.md).
 
 `sign-shuffle` shows a progress bar with elapsed time and ETA. Each step completes
 one empirical/shuffled pair. The sweep reuses the core topology to avoid copying
@@ -172,11 +198,12 @@ references: [Methods](docs/methods.md).
 
 | Location | Contents |
 | --- | --- |
-| `data/raw/` | Downloaded body TSV. |
+| `data/raw/` | Downloaded body and optional title TSVs. |
 | `data/processed/aggregate.graphml`, `core.graphml` | Graphs with interaction counts and edge signs; core includes community labels. |
 | `data/processed/unsigned.npz`, `signed.npz`, `nodes.json`, `network_metadata.json` | Aligned core matrices, node order, and file/core identity checks. |
 | `data/processed/centrality.csv`, `centrality.json` | Existing centrality scores, raw degrees, and input/output checksums. |
 | `data/processed/communities.csv` | Node community labels. |
+| `data/processed/signed_leverage.csv`, `temporal_bridge_centrality.csv`, `targeting_scores.json` | Proposed targeting scores, the bridge score consumed by `ico`, and their definitions and checksums. |
 | `data/processed/node_features.csv`, `node_features.json` | Node scores and graph/input checksums for reuse by later stages. |
 | `results/topology/metrics.json` | Network metrics, input metadata, and layout settings. |
 | `results/topology/degree_distribution.csv`, `degree_fits.csv`, `degree_distribution.png`, `.pdf` | Core degree distribution, descriptive fits, and figures. |
@@ -193,6 +220,9 @@ references: [Methods](docs/methods.md).
 | `results/temporal_balance/` | Per-triangle closures, prediction metrics overall, per wedge and per quarter, temporal null comparisons, figures, and metadata. |
 | `results/directed_roles/` | `node_roles.csv` in `nodes.json` order (directed roles, `r_neg`, bridges), reciprocity, sign fractions, community bridge rates, figures, and metadata. |
 | `results/label_audit/` | Label audit for the body file and the core, rows per post, and filtering-stage counts. |
+| `data/processed/extraction_comparison/<configuration>/` | Separate core graphs, aligned matrices and metadata, communities, and node orders for Georgi. |
+| `results/extraction_comparison/` | Comparison CSV/JSON, per-core metrics, degree distributions, tables, and figures. |
+| `results/link_sources/` | Body/title summaries, overlap CSV/JSON, and a core-membership table. |
 
 Generated files are ignored by Git. Reruns replace outputs in the selected
 directories. Rerun preprocessing after changing data rules.

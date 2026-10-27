@@ -247,7 +247,7 @@ def _top_share(negative_degree: NDArray, share: float) -> NDArray[np.float64]:
     negative_degree = np.atleast_2d(negative_degree)
     top = max(1, int(np.ceil(share * negative_degree.shape[1])))
     ordered = -np.sort(-negative_degree, axis=1)
-    return ordered[:, :top].sum(axis=1) / negative_degree.sum(axis=1)
+    return safe_ratio(ordered[:, :top].sum(axis=1), negative_degree.sum(axis=1))
 
 
 def concentration_summary(

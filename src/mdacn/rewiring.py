@@ -105,7 +105,8 @@ def rewire(
 
     Each attempt picks a uniform edge, then a second uniform edge with the same sign,
     and rewires (u, v), (x, y) to (u, y), (x, v). Swaps that create a self loop or a
-    duplicate edge, or that leave both edges unchanged, are rejected. Every node keeps its unsigned degree and its positive, negative, and zero degree.
+    duplicate edge, or that leave both edges unchanged, are rejected. Every node
+    keeps its unsigned degree and its positive, negative, and zero degree.
 
     Edge records (sign, n_positive, n_negative) follow the first endpoint's stub:
     (u, y) takes the record of (u, v), and (x, v) the record of (x, y).
@@ -113,7 +114,8 @@ def rewire(
     target and rule steer the positive and negative pools toward the insular or
     integrated score; zero-sign edges carry no signed influence and are always
     swapped without steering. rule='unbiased' accepts every valid swap and is the
-    degree-preserving reference. beta is required only for rule='metropolis' (which allows short-term decrease of the score).
+    degree-preserving reference. beta is required only for rule='metropolis'
+    (which allows short-term decrease of the score).
     checkpoint_interval > 0 records counts every that many attempts.
 
     attempts is the maximum. With window > 0, the run also stops once the tracked

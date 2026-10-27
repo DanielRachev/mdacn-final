@@ -21,12 +21,14 @@ from mdacn.rewiring_pipeline import (
 )
 from mdacn.signed_structure import run_incident_sign_analysis
 from mdacn.signed_triads import run_signed_triad_analysis
+from mdacn.targeting_pipeline import save_targeting_scores
 from mdacn.temporal_balance import run_temporal_balance_analysis
 
 STAGES = (
     "setup",
     "characterise",
     "centrality",
+    "targeting-scores",
     "directed-roles",
     "features",
     "nco",
@@ -151,8 +153,10 @@ def save_reports() -> None:
 def run_stage(stage: str, **overrides) -> None:
     paths = config.stage_paths()
     if stage == "setup":
-        destination = overrides.get("output", paths["dataset"])
-        download_dataset(destination)
+        dataset = overrides.get("dataset", "body")
+        default = paths["dataset"] if dataset == "body" else Path(config.PATHS["title_dataset"])
+        destination = overrides.get("output") or default
+        download_dataset(destination, dataset=dataset)
         print(f"Dataset ready: {destination}")
     elif stage == "characterise":
         options = {
@@ -167,6 +171,14 @@ def run_stage(stage: str, **overrides) -> None:
     elif stage == "centrality":
         _require([paths["core"], paths["nodes"]], "characterise")
         save_centrality_scores(paths["core"])
+    elif stage == "targeting-scores":
+        options = {
+            "graph_path": paths["core"],
+            "activity_path": None,
+            **overrides,
+        }
+        _require([options["graph_path"], paths["communities"]], "characterise")
+        save_targeting_scores(**options)
     elif stage == "features":
         run_features()
     elif stage in ("nco", "sign-shuffle", "ico"):
