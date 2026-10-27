@@ -37,3 +37,13 @@ older sampled studies before running `reports`.
 The `reports` stage writes two 2560 x 1440 PNGs at the default `f=0.5`:
 `impact_distribution_f0.5.png` (box plots and one point per node mean) and
 `impact_correlations_f0.5.png` (Pearson/Spearman coefficients with 95% intervals).
+
+
+The corrected study also records the immediate pinned-only state. `direct_impact`
+includes both removal of the pinned negative node and any immediate GCC
+fragmentation. `spillover_impact` is the additional GCC change caused by subsequent
+updates. `unpinned_changes` and its two directional counts measure actual opinion
+changes beyond the pinned node. Their sum satisfies `impact = direct_impact +
+spillover_impact`. Analysis writes `impact_components.csv` and separate
+`spillover_*.csv` association tables. This prevents a one-node GCC decrease from
+being presented as an opinion cascade.

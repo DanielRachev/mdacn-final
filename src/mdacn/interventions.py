@@ -9,6 +9,16 @@ from scipy.sparse import csr_matrix
 from mdacn.contracts import Model, OpinionState, SimulationResult, Strategy
 from mdacn.dynamics import _prepare_matrix, _prepare_state, _step
 
+# Strategies that rank nodes by a per-node score.
+RANKED_STRATEGIES = (
+    "degree",
+    "betweenness",
+    "eigenvector",
+    "leverage",
+    "signed_leverage",
+    "temporal_bridge",
+)
+
 
 def _validate_nonnegative_integer(value: int, name: str) -> None:
     if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)) or value < 0:
@@ -30,10 +40,11 @@ def select_contrarians(
     seed: int,
     scores: dict[str, float] | None = None,
 ) -> tuple[str, ...]:
-    """Owner: Polly. Select nodes for random, degree, or leverage targeting.
+    """Owner: Polly. Select nodes by random or score-ranked targeting.
 
-    budget_fraction lies in [0, 1]. Scores are required for degree and leverage.
-    Return unique names from nodes; experiments record the realized budget.
+    Phase 2 adds the ranked strategies. budget_fraction lies in [0, 1]. Scores
+    are required for ranked strategies. Return unique names from nodes;
+    experiments record the realized budget.
     """
     if isinstance(budget_fraction, bool) or not np.isfinite(budget_fraction):
         raise ValueError("budget_fraction must be a finite float in [0, 1]")
@@ -51,9 +62,9 @@ def select_contrarians(
     unique_nodes = tuple(dict.fromkeys(nodes))
     if strategy == "random":
         rng = np.random.default_rng(seed)
-        selection = rng.choice(len(unique_nodes), size=min(count, len(unique_nodes)), replace=False)
+        selection = rng.permutation(len(unique_nodes))[: min(count, len(unique_nodes))]
         return tuple(unique_nodes[int(index)] for index in sorted(selection))
-    if strategy in {"degree", "leverage"}:
+    if strategy in RANKED_STRATEGIES:
         if scores is None:
             raise ValueError(f"scores are required for {strategy} targeting")
         ranked = _candidate_order(unique_nodes, scores)

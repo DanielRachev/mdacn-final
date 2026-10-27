@@ -142,7 +142,9 @@ def project(tmp_path, monkeypatch):
         {"core_method": "k_core", "k": 1, "min_interactions": 1, "seed": 0},
     )
     monkeypatch.setattr(
-        config, "REWIRING", {**config.REWIRING, "replicates": 1, "attempts_per_edge": 5}
+        config,
+        "REWIRING",
+        {**config.REWIRING, "replicates": 1, "reference_replicates": 1, "attempts_per_edge": 5},
     )
     monkeypatch.setattr(config, "REWIRED_ICO", {**config.REWIRED_ICO, "initializations": 2})
     monkeypatch.setattr(config, "INCIDENT_SIGNS", {**config.INCIDENT_SIGNS, "realizations": 20})

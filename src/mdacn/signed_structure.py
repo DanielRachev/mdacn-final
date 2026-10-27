@@ -13,7 +13,7 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.stats import false_discovery_control, hypergeom
 
 from mdacn.artifacts import checksum, write_json
-from mdacn.data import community_labels, load_graph
+from mdacn.data import canonical_edges, community_labels, edge_order_metadata, load_graph
 from mdacn.plots import plot_negative_ratio_distribution
 
 BinScheme = Literal["width", "quantile"]
@@ -22,9 +22,9 @@ _EDGE_TOLERANCE = 1e-9
 
 @dataclass(frozen=True)
 class SignedEdges:
-    """Edge endpoints and signs in graph.edges order; nodes in nodes.json order.
+    """Edge endpoints and signs in canonical edge order; nodes in nodes.json order.
 
-    Keeping graph.edges order lets shuffle seeds replay through shuffle_edge_signs.
+    Canonical order makes shuffle seeds independent of graph insertion order.
     """
 
     nodes: tuple[str, ...]
@@ -91,7 +91,7 @@ def signed_edges(graph: nx.Graph) -> SignedEdges:
         raise ValueError("Incident signs require a simple undirected graph without self loops")
     nodes = tuple(sorted(graph))
     index = {node: i for i, node in enumerate(nodes)}
-    edges = list(graph.edges(data="sign"))
+    edges = [(u, v, data["sign"]) for u, v, data in canonical_edges(graph)]
     if any(sign not in (-1, 0, 1) for _, _, sign in edges):
         raise ValueError("Every edge must have a sign of -1, 0, or +1")
     return SignedEdges(
@@ -350,6 +350,7 @@ def run_incident_sign_analysis(
             "graph_path": str(graph_path.resolve()),
             "graph_sha256": checksum(graph_path),
             "graph_metadata": graph.graph,
+            **edge_order_metadata(graph),
             "n_nodes": len(table),
             "n_edges": len(signs),
             "sign_counts": {str(value): signs.count(value) for value in (1, -1, 0)},

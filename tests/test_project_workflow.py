@@ -3,6 +3,8 @@ import pandas as pd
 import pytest
 
 from mdacn import config, impact_pipeline, workflow
+from mdacn.experiments import ALL_STRATEGIES
+from mdacn.ico_pipeline import BENCHMARK_MODELS
 
 
 @pytest.fixture
@@ -64,6 +66,7 @@ def project(tmp_path, monkeypatch):
             "negative_incident_ratio": [0] * 6,
             "signed_bridge_ratio": [0] * 6,
             "temporal_activity": [1] * 6,
+            "temporal_bridge": [0.1, 0.2, 0.3, 0.3, 0.2, 0.1],
         }
     )
     paths = config.stage_paths()
@@ -72,11 +75,14 @@ def project(tmp_path, monkeypatch):
         ("signed_leverage", ["signed_leverage"]),
         ("incident_signs", ["negative_incident_ratio", "signed_bridge_ratio"]),
         ("temporal_activity", ["temporal_activity"]),
+        ("temporal_bridge", ["temporal_bridge"]),
     ):
         scores[["node", *columns]].to_csv(paths[output], index=False)
     monkeypatch.setattr(config, "ICO", {"budgets": [0.0, 0.25]})
     monkeypatch.setattr(
-        config, "REWIRING", {**config.REWIRING, "replicates": 1, "attempts_per_edge": 5}
+        config,
+        "REWIRING",
+        {**config.REWIRING, "replicates": 1, "reference_replicates": 1, "attempts_per_edge": 5},
     )
     monkeypatch.setattr(config, "REWIRED_ICO", {**config.REWIRED_ICO, "initializations": 2})
     monkeypatch.setattr(config, "INCIDENT_SIGNS", {**config.INCIDENT_SIGNS, "realizations": 5})
@@ -300,13 +306,25 @@ def test_ico_sweeps_saved_inputs_and_reports_without_simulation(project, monkeyp
     path = project["ico"] / "intervention_sweep.csv"
     before = path.read_bytes()
     outcomes = pd.read_csv(path)
-    assert len(outcomes) == 2 * 2 * 2 * 3
+    assert len(outcomes) == 2 * 2 * 2 * len(ALL_STRATEGIES) * len(BENCHMARK_MODELS)
     assert set(outcomes.f) == {0.0, 1.0}
+    assert set(outcomes.model) == {"unsigned", "signed"}
+    assert set(outcomes.strategy) == set(ALL_STRATEGIES)
     assert not (project["ico"] / "intervention_summary.csv").exists()
     monkeypatch.setattr(workflow, "run_ico_experiment", lambda *a, **k: pytest.fail("No rerun"))
     workflow.run_stage("reports")
     assert path.read_bytes() == before
     summary = pd.read_csv(project["ico"] / "intervention_summary.csv")
     assert summary.runs.sum() == len(outcomes)
-    assert (project["ico"] / "intervention_comparison_f0.png").is_file()
-    assert (project["ico"] / "intervention_comparison_f1.png").is_file()
+    phi_c = pd.read_csv(project["ico"] / "phi_c.csv")
+    assert {"model", "f", "strategy", "mean_phi_c", "status"} <= set(phi_c)
+    assert set(phi_c.status) <= {
+        "reached",
+        "not reached in the tested range",
+        "partially reached in the tested range",
+        "reference below threshold at Phi = 0",
+    }
+    for model in ("unsigned", "signed"):
+        assert (project["ico"] / f"intervention_comparison_{model}_f0.png").is_file()
+        assert (project["ico"] / f"intervention_comparison_{model}_f1.png").is_file()
+    assert (project["ico"] / "phi_c_comparison.png").is_file()

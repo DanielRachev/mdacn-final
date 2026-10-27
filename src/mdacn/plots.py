@@ -11,6 +11,27 @@ import pandas as pd
 from matplotlib.lines import Line2D
 
 from mdacn.characterisation import degree_distribution, fitted_degree_probabilities
+from mdacn.threshold_plots import plot_threshold_summary
+
+STRATEGY_COLORS = {
+    "random": "tab:blue",
+    "degree": "tab:orange",
+    "betweenness": "tab:purple",
+    "eigenvector": "tab:brown",
+    "leverage": "tab:green",
+    "signed_leverage": "tab:red",
+    "temporal_bridge": "tab:cyan",
+}
+
+
+def strategy_color(strategy: str, fallback_index: int = 0) -> str:
+    """Return the shared colour for a targeting strategy."""
+    return STRATEGY_COLORS.get(strategy, f"C{fallback_index % 10}")
+
+
+def strategy_label(strategy: str) -> str:
+    """Return a readable legend label for a targeting strategy."""
+    return strategy.replace("_", " ").capitalize()
 
 
 def plot_degree_distribution(distribution: pd.DataFrame, fits: pd.DataFrame, path: Path) -> None:
@@ -398,10 +419,10 @@ def plot_intervention_comparison(
 ) -> None:
     """Owner: Polly. Save opposing cluster fraction S_1/N against contrarian budget Phi.
 
-    Compare random, degree, and leverage targeting with realisation variability.
-    Identify cycles and update-limit runs separately from steady-state results.
-    Set opinion="plus" to show the positive GCC instead. The default also
-    accepts older tables containing only cluster_size and n_nodes.
+    Phase 2 plots every strategy present. Compare strategies with realisation
+    variability. Identify cycles and update-limit runs separately from
+    steady-state results. Set opinion="plus" to show the positive GCC instead.
+    The default also accepts older tables containing only cluster_size and n_nodes.
     """
     if results.empty:
         raise ValueError("No intervention results to plot")
@@ -430,14 +451,11 @@ def plot_intervention_comparison(
     lower, upper = 0.0, 1.0
     for axis, (status, title) in zip(axes, statuses, strict=True):
         subset = results.loc[results["stop_reason"] == status]
-        for strategy, color in (
-            ("random", "tab:blue"),
-            ("degree", "tab:orange"),
-            ("leverage", "tab:green"),
-        ):
+        for index, strategy in enumerate(sorted(results["strategy"].unique())):
             runs = subset.loc[subset["strategy"] == strategy]
             if runs.empty:
                 continue
+            color = strategy_color(str(strategy), index)
             summary = runs.groupby("budget")["cluster_fraction"].agg(["mean", "std"])
             spread = summary["std"].fillna(0)
             lower = min(lower, float((summary["mean"] - spread).min()))
@@ -451,7 +469,7 @@ def plot_intervention_comparison(
                 fmt="o-" if status == "steady_state" else "o--",
                 color=color,
                 capsize=3,
-                label=strategy.capitalize(),
+                label=strategy_label(str(strategy)),
             )
         axis.set_title(title)
         axis.set_xlabel("Contrarian budget Phi")
@@ -876,7 +894,8 @@ def plot_directed_roles(
         range(len(groups)), [f"{sign} pairs\n(n={signs.loc[sign, 'pairs']:,})" for sign in groups]
     )
     axes[1].set_ylabel("Fraction of ordered pairs with a reverse link")
-    axes[1].set_ylim(0, max(0.05, 1.4 * signs.loc[groups, "reverse_any_fraction"].max()))
+    upper = max(0.05, 1.4 * float(signs.loc[groups, "reverse_any_fraction"].max()))
+    axes[1].set_ylim(0, upper)
     axes[1].set_title("Directed reciprocity")
 
     rates = bridges.set_index("scope")
@@ -913,3 +932,9 @@ def plot_directed_roles(
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
+
+
+def plot_phi_c_comparison(phi_c: pd.DataFrame, path: Path) -> None:
+    """Show conditional thresholds with reached and zero-budget fractions."""
+    if not phi_c.empty:
+        plot_threshold_summary(phi_c, path)

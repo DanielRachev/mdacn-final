@@ -13,6 +13,39 @@ COLORS = {"unsigned": "#0072B2", "signed": "#D55E00"}
 MARKERS = {"unsigned": "o", "signed": "s"}
 
 
+def save_impact_components(summary: pd.DataFrame, output: Path, *, n_nodes: int) -> None:
+    """Show direct GCC changes beside propagation beyond the pinned node."""
+    for fraction, group in summary.groupby("f"):
+        group = group.set_index("model").reindex([m for m in COLORS if m in set(group.model)])
+        positions = np.arange(len(group))
+        fig, axes = plt.subplots(1, 2, figsize=(11, 4.4), layout="constrained")
+        for index, (column, label) in enumerate(
+            [
+                ("mean_total_impact", "total"),
+                ("mean_direct_impact", "direct pinning / fragmentation"),
+                ("mean_spillover_impact", "subsequent propagation"),
+            ]
+        ):
+            values = group[column].to_numpy() * n_nodes
+            bars = axes[0].bar(positions + (index - 1) * 0.23, values, 0.23, label=label)
+            axes[0].bar_label(bars, fmt="%.4f", fontsize=8, padding=3)
+        axes[0].set_xticks(positions, group.index)
+        axes[0].set_ylabel("Mean reduction in negative GCC nodes")
+        axes[0].legend(fontsize=8)
+        rates = 100 * group.propagation_run_fraction.to_numpy()
+        bars = axes[1].bar(positions, rates, color=[COLORS[m] for m in group.index], width=0.5)
+        axes[1].bar_label(bars, labels=[f"{r:.2f}%" for r in rates], padding=3)
+        axes[1].set_xticks(positions, group.index)
+        axes[1].set_ylabel("Trials with an unpinned opinion change (%)")
+        axes[1].set_ylim(0, max(1, float(rates.max()) * 1.35))
+        for axis in axes:
+            axis.grid(axis="y", alpha=0.15)
+        fig.suptitle(f"Single-node intervention: direct effect versus propagation (f={fraction:g})")
+        output.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output / f"impact_components_f{fraction:g}.png", dpi=180)
+        plt.close(fig)
+
+
 def _save_distribution(summary: pd.DataFrame, fraction: float, output: Path) -> None:
     """Plot the distribution of node means, keeping every available node visible."""
     fig, ax = plt.subplots(figsize=(12.8, 7.2))

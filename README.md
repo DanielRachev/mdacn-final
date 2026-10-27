@@ -50,12 +50,14 @@ uv run python -m mdacn temporal-balance
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
 | `compare-extractions` | Compare k = 8, 10, 12 and activity >= 100, exporting each core separately. |
 | `compare-link-sources` | Compare body/title coverage, overlap, signs, and 10-core membership. |
+| `sensitivity` | Replay NCO and selected ICO outcomes on the exported cores; compare topology, signs, and outcomes. |
+| `combined-results` | Assemble saved NCO, sign-shuffle, ICO, temporal, rewiring, impact, and sensitivity outputs into one report. |
 | `centrality` | Run the existing degree, betweenness, eigenvector, and leverage implementations and save aligned scores. |
 | `targeting-scores` | Save the proposed signed-leverage and temporal-activity bridge scores used by `ico`. |
 | `features` | Read expected contributor output files, then merge and validate their scores. |
 | `nco` | Save unsigned and signed simulation outcomes on the exported core. |
 | `sign-shuffle` | Save paired empirical/sign-shuffled simulation outcomes. |
-| `ico` | Load saved matrices and scores, then save the existing unsigned random/degree/leverage budget sweep for each configured initial fraction. |
+| `ico` | Load saved matrices and scores, then run all seven targeting strategies on the unsigned and signed cores and save the budget sweep, `Phi_c`, and backfire columns. |
 | `node-impact` | Load saved scores and save paired single-node intervention outcomes for every core node. |
 | `reports` | Save summaries, impact statistics, and plots from stored experiment results. |
 | `rewire` | Export degree-preserving rewired graphs: unbiased reference, insular, and integrated. |
@@ -74,6 +76,8 @@ settings for summaries and current analysis settings for bootstrap calculations.
 
 Phase 2 node-impact commands, input tables, and output interpretation:
 [Node-impact guide](docs/node_impact.md).
+Targeting strategies, the backfire measurement, and `Phi_c`:
+[Contrarian targeting benchmark](docs/interventions.md).
 
 Alternative core: filter by original incident interaction count, then keep the
 largest connected component.
@@ -99,9 +103,9 @@ relative to `PATHS["processed_dir"]`. The default files and required columns are
 | `temporal_activity.csv` | `node`, `temporal_activity` |
 
 `centrality` also exports normalized `degree_centrality` and `eigenvector`.
-`directed-roles` writes `incident_signs.csv`. `targeting-scores` writes
-`signed_leverage.csv` and the bridge score consumed by `ico`. The temporal
-activity export still comes from the pending contributor implementation.
+`targeting-scores` writes `signed_leverage.csv` and the bridge score it consumes
+from `ICO`. `directed-roles` writes `incident_signs.csv`; `temporal_activity.csv`
+still comes from the pending contributor implementation.
 All seven impact scores are required for every core node.
 The `features` stage writes the shared score table consumed by `node-impact`.
 Scores are kept unchanged. Missing or invalid required scores produce an error;
@@ -120,8 +124,9 @@ writes `targeting_scores.json` with the input checksums and both definitions.
 Simulation stages load `unsigned.npz`, `signed.npz`, and `nodes.json` produced by
 `characterise`. Missing or changed matrix artifacts cause an error. A custom
 `--graph` requires the matching artifacts and `network_metadata.json` beside it.
-`ico` takes its budget grid from `ICO["budgets"]`; fractions and repeated-run
-settings use `SIMULATION`. `reports` reads its saved results without rerunning it.
+`ico` takes its budget grid, models, strategies, and `Phi_c` threshold from
+`ICO`; fractions and repeated-run settings use `SIMULATION`. `reports` reads its
+saved results without rerunning it.
 `rewire`, `rewire-ico`, and the signed-structure stages take the same `--graph`; the
 stages that read raw events also take `--input`.
 
@@ -142,6 +147,31 @@ It exports each graph with its matching matrices and `nodes.json`; changing
 extraction changes the node set. The title audit measures feasibility without
 running opinion dynamics. See [measured findings and handoff](docs/extraction_comparison.md).
 
+Replay the simulation protocol on those exported cores to check whether the
+default 10-core changes the conclusions:
+
+```bash
+uv run python -m mdacn sensitivity
+```
+
+The default run uses the full `f` sweep for NCO and `random`, `degree`, and
+`leverage` at `f = 0.5` for ICO, with both models and 20 realisations. It writes
+`results/sensitivity/` tables, figures, and a per-core outcome summary. Use
+`--strategies` to add the proposed scores, `--ico-fractions` to widen the ICO
+grid, and `--skip-nco` or `--skip-ico` to rerun one half. See
+[core extraction sensitivity](docs/sensitivity.md).
+
+Assemble the saved experiment outputs into one report:
+
+```bash
+uv run python -m mdacn combined-results
+```
+
+The command reads the saved NCO, sign-shuffle, ICO, temporal, rewiring,
+node-impact, and sensitivity outputs. Missing inputs are listed in
+`results/combined/inputs.json` and `warnings.txt`; the command still writes the
+sections it can build. See [combined results](docs/combined_results.md).
+
 `sign-shuffle` shows a progress bar with elapsed time and ETA. Each step completes
 one empirical/shuffled pair. The sweep reuses the core topology to avoid copying
 the graph for each realization.
@@ -150,6 +180,10 @@ NCO, sign-shuffle, and ICO use the same 50-point fraction grid: 0.02 to 1.00 in
 steps of 0.02. Set `--fractions` to supply another grid. Seeds are assigned by
 recorded fraction order, then realization; changing the grid changes which
 initial seeds are assigned to shared fraction points.
+
+The full ICO suite costs about 98,000 runs on that grid, five times the earlier
+unsigned three-strategy sweep. Narrow `--fractions` and refine near an observed
+threshold instead; see [the targeting benchmark guide](docs/interventions.md).
 
 Sign shuffling also saves the largest and second-largest components for each
 opinion, measured on the fixed unsigned core and divided by the full core size.
@@ -211,8 +245,11 @@ references: [Methods](docs/methods.md).
 | `results/topology/core_layout.csv`, `core_communities.png`, `.pdf` | Full-core layout coordinates, community labels, and figures. |
 | `results/nco/` | Simulation results, raw-fraction and opinion-component summaries/figures, and metadata. |
 | `results/sign_shuffle/` | Sign-shuffle results, component summaries/figures, metadata, and node order. |
-| `results/ico/` | `intervention_sweep.csv`, run settings and node order; `reports` adds `intervention_summary.csv` and comparison PNGs per initial fraction. |
+| `results/ico/` | `intervention_sweep.csv`, `phi_c.csv`, run settings, and node order; `reports` adds `intervention_summary.csv`, per-model comparison PNGs per initial fraction, and `phi_c_comparison.png`. |
 | `results/node_impact/` | Run config and `study/` containing frozen core features, paired outcomes, and `analysis/`. |
+| `data/processed/extraction_comparison/<configuration>/` | Separate core graphs, aligned matrices and metadata, communities, and node orders for Georgi. |
+| `results/extraction_comparison/` | Comparison CSV/JSON, per-core metrics, degree distributions, tables, and figures. |
+| `results/link_sources/` | Body/title summaries, overlap CSV/JSON, and a core-membership table. |
 | `results/rewiring/` | Rewired matrices, per-node degrees, and validation metadata per graph; summary. Node order is the original `nodes.json`. |
 | `results/rewiring_ico/` | Signed ICO runs, packed baseline/terminal states, per-run Phi_c, Phi_c summary, paired `g_minus` comparisons (fixed empirical core), and metadata. |
 | `results/incident_signs/` | Per-node `r_neg` with shuffle p-values, binned P(r_neg), summary statistics, community sign rates, figures, and metadata. |
@@ -220,9 +257,6 @@ references: [Methods](docs/methods.md).
 | `results/temporal_balance/` | Per-triangle closures, prediction metrics overall, per wedge and per quarter, temporal null comparisons, figures, and metadata. |
 | `results/directed_roles/` | `node_roles.csv` in `nodes.json` order (directed roles, `r_neg`, bridges), reciprocity, sign fractions, community bridge rates, figures, and metadata. |
 | `results/label_audit/` | Label audit for the body file and the core, rows per post, and filtering-stage counts. |
-| `data/processed/extraction_comparison/<configuration>/` | Separate core graphs, aligned matrices and metadata, communities, and node orders for Georgi. |
-| `results/extraction_comparison/` | Comparison CSV/JSON, per-core metrics, degree distributions, tables, and figures. |
-| `results/link_sources/` | Body/title summaries, overlap CSV/JSON, and a core-membership table. |
 
 Generated files are ignored by Git. Reruns replace outputs in the selected
 directories. Rerun preprocessing after changing data rules.

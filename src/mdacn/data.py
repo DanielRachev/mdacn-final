@@ -1,5 +1,6 @@
 """Reddit input, static core extraction, and shared graph export."""
 
+import hashlib
 import json
 from pathlib import Path
 from shutil import copyfileobj
@@ -22,6 +23,24 @@ DATASET_URLS = {
 DATASET_URL = DATASET_URLS["body"]
 
 
+def canonical_edges(graph: nx.Graph) -> list[tuple]:
+    """Return undirected edge records ordered by their sorted endpoints."""
+    return sorted(
+        ((min(u, v), max(u, v), data) for u, v, data in graph.edges(data=True)),
+        key=lambda edge: (edge[0], edge[1]),
+    )
+
+
+def edge_order_metadata(graph: nx.Graph) -> dict:
+    """Identify the signed edge sequence consumed by seeded randomization."""
+    records = [(str(u), str(v), int(data["sign"])) for u, v, data in canonical_edges(graph)]
+    payload = json.dumps(records, separators=(",", ":")).encode()
+    return {
+        "edge_order": "canonical-endpoints-v1",
+        "signed_edge_sequence_sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
 def download_dataset(path: Path, *, dataset: Literal["body", "title"] = "body") -> Path:
     """Download a SNAP link dataset, keeping an existing file."""
     if dataset not in DATASET_URLS:
@@ -41,12 +60,15 @@ def download_dataset(path: Path, *, dataset: Literal["body", "title"] = "body") 
     return path
 
 
-def load_interactions(path: Path, *, include_post_id: bool = False) -> pd.DataFrame:
+def load_interactions(
+    path: Path, *, include_post_id: bool = False, post_ids: bool = False
+) -> pd.DataFrame:
     """Owner: Jacek. Read a body/title TSV into the interaction table contract.
 
     Return source, target, sentiment, and timestamp columns. Preserve directed
     events and repeated interactions. Optionally retain post_id for overlap audits.
     """
+    include_post_id = include_post_id or post_ids
     columns = {
         "SOURCE_SUBREDDIT": "source",
         "TARGET_SUBREDDIT": "target",

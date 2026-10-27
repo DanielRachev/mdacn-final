@@ -6,13 +6,18 @@ import pandas as pd
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
+from mdacn.backfire import backfire_metrics
 from mdacn.config import SIMULATION
-from mdacn.contracts import NetworkMatrices
+from mdacn.contracts import Model, NetworkMatrices, Strategy
+from mdacn.data import canonical_edges
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.evaluation import compute_opinion_components, compute_opinion_gcc
-from mdacn.interventions import select_contrarians, simulate_ico
+from mdacn.interventions import RANKED_STRATEGIES, select_contrarians, simulate_ico
 
 DEFAULT_FRACTIONS = tuple(SIMULATION["fractions"])
+ALL_STRATEGIES: tuple[Strategy, ...] = ("random", *RANKED_STRATEGIES)
+# Phase 1 unsigned runs keep their three strategies for comparability.
+DEFAULT_STRATEGIES: tuple[Strategy, ...] = ("random", "degree", "leverage")
 
 
 def shuffle_edge_signs(graph: nx.Graph, *, seed: int = 0) -> nx.Graph:
@@ -23,7 +28,7 @@ def shuffle_edge_signs(graph: nx.Graph, *, seed: int = 0) -> nx.Graph:
     if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
         raise ValueError("Sign shuffling requires a simple undirected graph without self loops")
 
-    edges = list(graph.edges(data=True))
+    edges = canonical_edges(graph)
     signs = [edge_data.get("sign") for _, _, edge_data in edges]
     if any(sign not in (-1, 0, 1) for sign in signs):
         raise ValueError("Every edge must have a sign of -1, 0, or +1")
@@ -99,36 +104,12 @@ def run_fraction_sweep(
     return results
 
 
-def run_intervention_sweep(
-    graph: nx.Graph,
-    network: NetworkMatrices,
-    *,
-    budgets: tuple[float, ...],
-    initial_negative_fraction: float,
+def _strategy_score_tables(
     scores: pd.DataFrame,
-    realizations: int = 20,
-    seed: int = 0,
-    max_steps: int = 1000,
-) -> pd.DataFrame:
-    """Owner: Polly. Compare random, degree, and leverage targeting on unsigned NCO.
-
-    Return one row per strategy, budget, and realisation, including opposing
-    cluster size, both opinion GCC fractions, and stop status. Seeds and baseline
-    states support comparison
-    across strategies. Settle each baseline with unsigned NCO before intervention.
-    Raise RuntimeError if a baseline cycles or reaches the update limit; neither
-    is a steady state. max_steps applies separately to both simulation stages.
-    """
-    if isinstance(realizations, bool) or not isinstance(realizations, int) or realizations < 1:
-        raise ValueError("realizations must be a positive integer")
-    budgets = tuple(budgets)
-    if not budgets or not all(np.isfinite(b) and 0 <= b <= 1 for b in budgets):
-        raise ValueError("budgets must be a nonempty sequence of finite values in [0, 1]")
-    if not np.isfinite(initial_negative_fraction) or not 0 <= initial_negative_fraction <= 1:
-        raise ValueError("initial_negative_fraction must be finite and in [0, 1]")
-    if len(network.nodes) != len(set(network.nodes)):
-        raise ValueError("network nodes must be unique")
-
+    network: NetworkMatrices,
+    strategy_scores: dict[str, dict[str, float]] | None,
+) -> dict[str, dict[str, float]]:
+    """Align every available score table to the core node order."""
     if (
         "node" not in scores
         or scores.node.duplicated().any()
@@ -140,30 +121,95 @@ def run_intervention_sweep(
     aligned = scores.set_index("node").reindex(network.nodes)
     if not np.isfinite(aligned[["degree", "leverage"]].to_numpy(float)).all():
         raise ValueError("Centrality scores must be finite")
-    degree_scores = aligned.degree.to_dict()
-    leverage_scores = aligned.leverage.to_dict()
-    strategies = ("random", "degree", "leverage")
-    seeds = np.random.SeedSequence(seed).spawn(len(budgets) * realizations)
 
+    tables = {column: aligned[column].to_dict() for column in aligned.columns}
+    for name, values in (strategy_scores or {}).items():
+        missing = [node for node in network.nodes if node not in values]
+        if missing:
+            raise ValueError(f"{name} scores missing for nodes: {missing}")
+        tables[name] = {node: float(values[node]) for node in network.nodes}
+    return tables
+
+
+def _resolve_strategies(strategies: tuple[Strategy, ...] | None) -> tuple[Strategy, ...]:
+    resolved = tuple(DEFAULT_STRATEGIES if strategies is None else strategies)
+    if not resolved:
+        raise ValueError("strategies must be nonempty")
+    if len(set(resolved)) != len(resolved):
+        raise ValueError("strategies must be unique")
+    unknown = [strategy for strategy in resolved if strategy not in ALL_STRATEGIES]
+    if unknown:
+        raise ValueError(f"Unknown strategies: {unknown}")
+    return resolved
+
+
+def run_intervention_sweep(
+    graph: nx.Graph,
+    network: NetworkMatrices,
+    *,
+    budgets: tuple[float, ...],
+    initial_negative_fraction: float,
+    scores: pd.DataFrame,
+    strategies: tuple[Strategy, ...] | None = None,
+    strategy_scores: dict[str, dict[str, float]] | None = None,
+    model: Model = "unsigned",
+    realizations: int = 20,
+    seed: int = 0,
+    max_steps: int = 1000,
+) -> pd.DataFrame:
+    """Compare contrarian targeting strategies on the unsigned or signed core.
+
+    Owner: Polly; the added strategies, signed model, and backfire columns are
+    Georgi's. Return one row per strategy, budget, and realisation, including
+    opposing cluster size, both opinion GCC fractions, the paired baseline
+    fractions, their difference, and stop status. Seeds and baseline states
+    support comparison across budgets and strategies. Settle each baseline once with the same
+    model before intervention. Raise RuntimeError if a baseline cycles or reaches
+    the update limit; neither is a steady state. max_steps applies separately to
+    both simulation stages.
+    """
+    if isinstance(realizations, bool) or not isinstance(realizations, int) or realizations < 1:
+        raise ValueError("realizations must be a positive integer")
+    budgets = tuple(budgets)
+    if not budgets or not all(np.isfinite(b) and 0 <= b <= 1 for b in budgets):
+        raise ValueError("budgets must be a nonempty sequence of finite values in [0, 1]")
+    if not np.isfinite(initial_negative_fraction) or not 0 <= initial_negative_fraction <= 1:
+        raise ValueError("initial_negative_fraction must be finite and in [0, 1]")
+    if len(network.nodes) != len(set(network.nodes)):
+        raise ValueError("network nodes must be unique")
+    if model not in ("unsigned", "signed"):
+        raise ValueError("model must be 'unsigned' or 'signed'")
+
+    resolved = _resolve_strategies(strategies)
+    tables = _strategy_score_tables(scores, network, strategy_scores)
+    unavailable = [
+        strategy for strategy in resolved if strategy != "random" and strategy not in tables
+    ]
+    if unavailable:
+        raise ValueError(
+            f"Missing scores for {unavailable}. Run targeting-scores for the proposed "
+            "scores or centrality for the existing ones."
+        )
+
+    matrix = network.signed if model == "signed" else network.unsigned
+    seeds = np.random.SeedSequence(seed).spawn(realizations)
     rows = []
-    for budget_index, budget in enumerate(budgets):
-        for realization in range(realizations):
-            initial_seed = int(
-                seeds[budget_index * realizations + realization].generate_state(1)[0]
+    for realization, child in enumerate(seeds):
+        initial_seed = int(child.generate_state(1)[0])
+        initial = initialize_opinions(
+            len(network.nodes), initial_negative_fraction, seed=initial_seed
+        )
+        baseline = simulate_nco(matrix, initial, model=model, max_steps=max_steps)
+        if baseline.stop_reason != "steady_state":
+            raise RuntimeError(
+                f"Baseline did not reach a steady state: {baseline.stop_reason} "
+                f"(model={model}, realization={realization}, "
+                f"initial_seed={initial_seed})"
             )
-            initial = initialize_opinions(
-                len(network.nodes), initial_negative_fraction, seed=initial_seed
-            )
-            baseline = simulate_nco(
-                network.unsigned, initial, model="unsigned", max_steps=max_steps
-            )
-            if baseline.stop_reason != "steady_state":
-                raise RuntimeError(
-                    f"Baseline did not reach a steady state: {baseline.stop_reason} "
-                    f"(budget={budget}, realization={realization}, initial_seed={initial_seed})"
-                )
-            for strategy in strategies:
-                score_map = {"degree": degree_scores, "leverage": leverage_scores}.get(strategy)
+        baseline_gcc = compute_opinion_gcc(graph, baseline.final_state, nodes=network.nodes)
+        for budget in budgets:
+            for strategy in resolved:
+                score_map = None if strategy == "random" else tables[strategy]
                 contrarians = select_contrarians(
                     network.nodes,
                     budget,
@@ -172,26 +218,42 @@ def run_intervention_sweep(
                     scores=score_map,
                 )
                 result = simulate_ico(
-                    network.unsigned,
+                    matrix,
                     baseline.final_state,
                     nodes=network.nodes,
                     contrarians=contrarians,
                     max_steps=max_steps,
+                    model=model,
                 )
                 gcc = compute_opinion_gcc(graph, result.final_state, nodes=network.nodes)
+                delta = gcc["g_minus"] - baseline_gcc["g_minus"]
                 rows.append(
                     {
                         "strategy": strategy,
+                        "model": model,
                         "budget": budget,
                         "realization": realization,
                         "seed": seed,
                         "initial_seed": initial_seed,
+                        "selection_seed": initial_seed + realization + len(strategy),
                         "n_nodes": len(network.nodes),
+                        "contrarian_count": len(contrarians),
                         "baseline_steps": baseline.steps,
                         "baseline_negative_fraction": float(np.mean(baseline.final_state == -1)),
+                        "baseline_g_minus": baseline_gcc["g_minus"],
+                        "baseline_g_plus": baseline_gcc["g_plus"],
                         "initial_negative_fraction": float(np.mean(initial == -1)),
                         "cluster_size": round(gcc["g_minus"] * len(network.nodes)),
                         **gcc,
+                        "delta_g_minus": delta,
+                        "backfired": bool(delta > 0),
+                        **backfire_metrics(
+                            network,
+                            contrarians=contrarians,
+                            baseline_state=baseline.final_state,
+                            final_state=result.final_state,
+                            model=model,
+                        ),
                         "steps": result.steps,
                         "stop_reason": result.stop_reason,
                         "cycle_length": result.cycle_length,
@@ -233,8 +295,8 @@ def run_sign_shuffle_fraction_sweep(
     if not n_nodes:
         raise ValueError("graph must have at least one node")
     node_index = {node: index for index, node in enumerate(empirical.nodes)}
-    # Preserve edge order so shuffle seeds still replay through shuffle_edge_signs.
-    edges = list(graph.edges(data="sign"))
+    # Canonical order replays independently of graph insertion or serialization order.
+    edges = [(u, v, data["sign"]) for u, v, data in canonical_edges(graph)]
     sources = np.array([node_index[u] for u, _, _ in edges], dtype=np.intp)
     targets = np.array([node_index[v] for _, v, _ in edges], dtype=np.intp)
     edge_rows = np.concatenate((sources, targets))

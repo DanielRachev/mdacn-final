@@ -6,8 +6,10 @@ from pathlib import Path
 import matplotlib
 
 from mdacn import config
+from mdacn.combined import run_combined_results
 from mdacn.extraction_comparison import compare_extractions
 from mdacn.link_comparison import compare_link_sources
+from mdacn.sensitivity import run_sensitivity
 from mdacn.workflow import run_project, run_stage
 
 
@@ -158,6 +160,53 @@ def main() -> None:
         default=None,
         help="Optional per-node activity CSV with node and temporal_activity columns",
     )
+    sensitivity = commands.add_parser(
+        "sensitivity", help="Replay NCO and selected ICO outcomes on nearby core extractions"
+    )
+    sensitivity.add_argument(
+        "--extraction-dir",
+        type=Path,
+        default=Path(config.SENSITIVITY["extraction_dir"]),
+    )
+    sensitivity.add_argument(
+        "--results-dir",
+        type=Path,
+        default=Path(config.SENSITIVITY["results_dir"]),
+    )
+    sensitivity.add_argument(
+        "--configurations", nargs="+", default=config.SENSITIVITY["configurations"]
+    )
+    sensitivity.add_argument(
+        "--fractions", type=float, nargs="+", default=config.SENSITIVITY["fractions"]
+    )
+    sensitivity.add_argument(
+        "--ico-fractions",
+        type=float,
+        nargs="+",
+        default=config.SENSITIVITY["ico_fractions"],
+    )
+    sensitivity.add_argument("--models", nargs="+", default=config.SENSITIVITY["models"])
+    sensitivity.add_argument("--strategies", nargs="+", default=config.SENSITIVITY["strategies"])
+    sensitivity.add_argument(
+        "--budgets", type=float, nargs="+", default=config.SENSITIVITY["budgets"]
+    )
+    sensitivity.add_argument("--realizations", type=int, default=config.SENSITIVITY["realizations"])
+    sensitivity.add_argument("--seed", type=int, default=config.SENSITIVITY["seed"])
+    sensitivity.add_argument("--max-steps", type=int, default=config.SENSITIVITY["max_steps"])
+    sensitivity.add_argument(
+        "--phi-c-threshold",
+        type=float,
+        default=config.SENSITIVITY["phi_c_threshold"],
+    )
+    sensitivity.add_argument("--skip-nco", action="store_true")
+    sensitivity.add_argument("--skip-ico", action="store_true")
+    combined = commands.add_parser(
+        "combined-results", help="Assemble saved results into one report"
+    )
+    combined.add_argument("--results-dir", type=Path, default=Path(config.COMBINED["results_dir"]))
+    combined.add_argument("--output-dir", type=Path, default=Path(config.COMBINED["output_dir"]))
+    combined.add_argument("--temporal-dir", type=Path, default=None)
+    combined.add_argument("--fraction", type=float, default=config.COMBINED["fraction"])
     commands.add_parser("features", help="Save node scores for subsequent experiments")
     commands.add_parser("node-impact", help="Run paired interventions using saved node scores")
     commands.add_parser(
@@ -202,6 +251,30 @@ def main() -> None:
                 args.title_input,
                 k=args.k,
                 results_dir=args.results_dir,
+            )
+        elif args.command == "sensitivity":
+            run_sensitivity(
+                extraction_dir=args.extraction_dir,
+                results_dir=args.results_dir,
+                configurations=tuple(args.configurations),
+                fractions=tuple(args.fractions),
+                ico_fractions=tuple(args.ico_fractions),
+                models=tuple(args.models),
+                strategies=tuple(args.strategies),
+                budgets=tuple(args.budgets),
+                realizations=args.realizations,
+                seed=args.seed,
+                max_steps=args.max_steps,
+                phi_c_threshold=args.phi_c_threshold,
+                skip_nco=args.skip_nco,
+                skip_ico=args.skip_ico,
+            )
+        elif args.command == "combined-results":
+            run_combined_results(
+                results_dir=args.results_dir,
+                output_dir=args.output_dir,
+                temporal_dir=args.temporal_dir,
+                fraction=args.fraction,
             )
         elif args.command in simulation_commands:
             run_stage(

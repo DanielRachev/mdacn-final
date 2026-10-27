@@ -98,8 +98,11 @@ def calculate_impact_statistics(
     *,
     bootstrap: int = 1000,
     seed: int = 0,
+    outcome: str = "impact",
 ) -> dict[str, pd.DataFrame]:
     """Calculate statistics using common steady runs and shared seed resampling."""
+    if outcome not in runs:
+        raise ValueError(f"Missing impact outcome: {outcome}")
     if bootstrap < 2:
         raise ValueError("bootstrap must be at least 2")
     if runs.empty or node_features.empty:
@@ -134,11 +137,11 @@ def calculate_impact_statistics(
         steady = (group.baseline_stop_reason == "steady_state") & (
             group.intervention_stop_reason == "steady_state"
         )
-        steady_values = group.loc[steady, "impact"].to_numpy(float)
+        steady_values = group.loc[steady, outcome].to_numpy(float)
         if not np.isfinite(steady_values).all() or np.any(np.abs(steady_values) > 1):
             raise ValueError("Steady impacts must be finite GCC differences in [-1, 1]")
         values = (
-            group.assign(steady_impact=group.impact.where(steady))
+            group.assign(steady_impact=group[outcome].where(steady))
             .pivot(index="node", columns="realization", values="steady_impact")
             .reindex(nodes)
             .astype(float)
