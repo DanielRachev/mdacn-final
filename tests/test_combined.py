@@ -110,6 +110,7 @@ def _fixture_tree(tmp_path):
                 "graph": ["reference", "insular_strict"],
                 "strategy": ["degree", "degree"],
                 "mean_phi_c": [0.05, 0.25],
+                "mean_intervention_phi_c": [0.05, 0.25],
                 "runs": [20, 20],
                 "reached_fraction": [1.0, 0.5],
                 "zero_budget_fraction": [0.0, 0.0],

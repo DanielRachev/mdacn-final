@@ -13,7 +13,7 @@ from mdacn.data import load_graph, load_matrices
 from mdacn.features import PREDICTORS, validate_features
 from mdacn.impact import iter_node_impacts, validate_design
 from mdacn.impact_analysis import calculate_impact_statistics
-from mdacn.impact_plots import save_impact_plots
+from mdacn.impact_plots import save_impact_components, save_impact_plots
 
 
 def _provenance() -> dict:
@@ -198,6 +198,7 @@ def save_impact_reports(
             table.to_csv(output / f"spillover_{name}.csv", index=False)
         summary = impact_component_summary(runs)
         summary.to_csv(output / "impact_components.csv", index=False)
+        save_impact_components(summary, output, n_nodes=plan["n_nodes"])
     save_impact_plots(tables["node_impact"], tables["correlations"], output)
     print(tables["regression_diagnostics"].to_string(index=False))
     print(f"Saved analysis: {output}")

@@ -259,6 +259,7 @@ def test_phi_c_comparison_figure_is_saved(tmp_path) -> None:
             "f": [0.5, 0.5, 0.5, 0.5],
             "strategy": ["degree", "signed_leverage", "degree", "signed_leverage"],
             "mean_phi_c": [0.1, 0.05, np.nan, 0.2],
+            "mean_intervention_phi_c": [0.1, 0.05, np.nan, 0.2],
             "runs": [20] * 4,
             "reached_fraction": [1, 1, 0, 1],
             "zero_budget_fraction": [0] * 4,

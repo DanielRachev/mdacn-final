@@ -80,9 +80,10 @@ operational threshold on a finite graph, not a thermodynamic critical point.
 include `reached_runs`, `unreached_runs`, `zero_budget_runs`, `eligible_runs`,
 `intervention_reached_fraction`, and `mean_intervention_phi_c`. The latter two
 exclude baselines already below the criterion. `mean_phi_c` remains conditional
-on reaching the criterion; it is always plotted with the reached fraction and
-the zero-budget share. Unreached steady trajectories are censored beyond the
-maximum tested budget; nonsteady outcomes remain unresolved.
+on reaching the criterion; the plot uses `mean_intervention_phi_c` to exclude
+trivial baseline successes, with the total reached fraction and zero-budget
+share below it. Unreached steady trajectories are censored beyond the maximum
+tested budget; nonsteady outcomes remain unresolved.
 
 | Status | Meaning |
 | --- | --- |
@@ -96,9 +97,9 @@ The status is separate from a threshold on the raw negative fraction `s_1`.
 ## Runtime
 
 The suite costs `fractions x models x budgets x realizations x strategies` runs,
-with one baseline settle per model/fraction/realization. The default 50-point grid gives about 98,000 runs,
-five times the unsigned three-strategy sweep. Use a narrower grid and refine near
-an observed threshold:
+with one baseline settle per model/fraction/realization. The default 50-point
+grid gives about 98,000 runs, five times the unsigned three-strategy sweep.
+Use a narrower grid and refine near an observed threshold:
 
 ```bash
 uv run python -m mdacn ico --fractions 0.3 0.4 0.5 0.6 0.7
