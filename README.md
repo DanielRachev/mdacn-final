@@ -18,8 +18,8 @@ Or run each stage separately. Config supplies all input and output paths:
 uv run python -m mdacn setup
 uv run python -m mdacn characterise
 uv run python -m mdacn centrality
-uv run python -m mdacn directed-roles
 uv run python -m mdacn targeting-scores
+uv run python -m mdacn directed-roles
 uv run python -m mdacn features
 uv run python -m mdacn nco
 uv run python -m mdacn sign-shuffle
@@ -50,6 +50,8 @@ uv run python -m mdacn temporal-balance
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
 | `compare-extractions` | Compare k = 8, 10, 12 and activity >= 100, exporting each core separately. |
 | `compare-link-sources` | Compare body/title coverage, overlap, signs, and 10-core membership. |
+| `sensitivity` | Replay NCO and selected ICO outcomes on the exported cores; compare topology, signs, and outcomes. |
+| `combined-results` | Assemble saved NCO, sign-shuffle, ICO, temporal, rewiring, impact, and sensitivity outputs into one report. |
 | `centrality` | Run the existing degree, betweenness, eigenvector, and leverage implementations and save aligned scores. |
 | `targeting-scores` | Save the proposed signed-leverage and temporal-activity bridge scores used by `ico`. |
 | `features` | Read expected contributor output files, then merge and validate their scores. |
@@ -101,14 +103,15 @@ relative to `PATHS["processed_dir"]`. The default files and required columns are
 | `temporal_activity.csv` | `node`, `temporal_activity` |
 
 `centrality` also exports normalized `degree_centrality` and `eigenvector`.
-`targeting-scores` writes `signed_leverage.csv` and the bridge score consumed
-by `ico`. `directed-roles` writes `incident_signs.csv`. The temporal activity
-export still comes from the contributor implementation.
+`targeting-scores` writes `signed_leverage.csv` and the bridge score it consumes
+from `ICO`. `directed-roles` writes `incident_signs.csv`; `temporal_activity.csv`
+still comes from the pending contributor implementation.
 All seven impact scores are required for every core node.
 The `features` stage writes the shared score table consumed by `node-impact`.
 Scores are kept unchanged. Missing or invalid required scores produce an error;
-neither `features` nor `node-impact` calculates replacements. The temporal activity
-export remains a prerequisite until its producing stage is connected to `run`.
+neither `features` nor `node-impact` calculates replacements. Contributor score
+exports for incident signs/bridges and temporal activity remain prerequisites
+until their producing stages are connected to `run`.
 
 Signed leverage is `l_signed(i) = (1/d_i) * sum_j W_ij * max(0, (d_i - d_j)/(d_i + d_j))`
 with the unsigned degree `d_i`, so zero-sign edges count in the denominator.
@@ -124,6 +127,12 @@ Simulation stages load `unsigned.npz`, `signed.npz`, and `nodes.json` produced b
 `ico` takes its budget grid, models, strategies, and `Phi_c` threshold from
 `ICO`; fractions and repeated-run settings use `SIMULATION`. `reports` reads its
 saved results without rerunning it.
+`rewire`, `rewire-ico`, and the signed-structure stages take the same `--graph`; the
+stages that read raw events also take `--input`.
+
+`signed-triads` reads Null Model B replicates from `--rewired-dir`
+(default `results/rewiring/graphs/reference`, written by the rewiring command) and
+skips that model if the directory is missing.
 
 Run Jacek's structural comparisons separately from the simulation experiments:
 
@@ -137,12 +146,31 @@ The extraction comparison uses seed 0 and writes to its own output directories.
 It exports each graph with its matching matrices and `nodes.json`; changing
 extraction changes the node set. The title audit measures feasibility without
 running opinion dynamics. See [measured findings and handoff](docs/extraction_comparison.md).
-`rewire`, `rewire-ico`, and the signed-structure stages take the same `--graph`; the
-stages that read raw events also take `--input`.
 
-`signed-triads` reads Null Model B replicates from `--rewired-dir`
-(default `results/rewiring/graphs/reference`, written by the rewiring command) and
-skips that model if the directory is missing.
+Replay the simulation protocol on those exported cores to check whether the
+default 10-core changes the conclusions:
+
+```bash
+uv run python -m mdacn sensitivity
+```
+
+The default run uses the full `f` sweep for NCO and `random`, `degree`, and
+`leverage` at `f = 0.5` for ICO, with both models and 20 realisations. It writes
+`results/sensitivity/` tables, figures, and a per-core outcome summary. Use
+`--strategies` to add the proposed scores, `--ico-fractions` to widen the ICO
+grid, and `--skip-nco` or `--skip-ico` to rerun one half. See
+[core extraction sensitivity](docs/sensitivity.md).
+
+Assemble the saved experiment outputs into one report:
+
+```bash
+uv run python -m mdacn combined-results
+```
+
+The command reads the saved NCO, sign-shuffle, ICO, temporal, rewiring,
+node-impact, and sensitivity outputs. Missing inputs are listed in
+`results/combined/inputs.json` and `warnings.txt`; the command still writes the
+sections it can build. See [combined results](docs/combined_results.md).
 
 `sign-shuffle` shows a progress bar with elapsed time and ETA. Each step completes
 one empirical/shuffled pair. The sweep reuses the core topology to avoid copying

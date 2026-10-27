@@ -24,7 +24,7 @@ def load_post_records(path: Path, *, chunksize: int = 50_000) -> pd.DataFrame:
     small; equal hashes identify identical feature vectors up to a negligible
     collision probability. Rows keep file order, so the two reads align.
     """
-    records = load_interactions(path, post_ids=True)
+    records = load_interactions(path, include_post_id=True)
     hashes = [
         pd.util.hash_pandas_object(chunk["PROPERTIES"], index=False).to_numpy()
         for chunk in pd.read_csv(

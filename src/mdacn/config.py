@@ -60,6 +60,8 @@ def stage_paths() -> dict:
         "sign-shuffle": results / "sign_shuffle",
         "ico": results / "ico",
         "node-impact": results / "node_impact",
+        "sensitivity": results / "sensitivity",
+        "combined": results / "combined",
         "rewire": results / "rewiring",
         "rewire-ico": results / "rewiring_ico",
         "incident-signs": results / "incident_signs",
@@ -83,6 +85,33 @@ ICO = {
         "temporal_bridge",
     ],
     "phi_c_threshold": 0.5,
+}
+
+
+# Narrow extraction sensitivity: reuse the core extraction outputs and the
+# simulation protocol, changing only the graph configuration.
+SENSITIVITY = {
+    "extraction_dir": "data/processed/extraction_comparison",
+    "results_dir": "results/sensitivity",
+    "configurations": ("k_core_8", "k_core_10", "k_core_12", "activity_lcc_100"),
+    "fractions": SIMULATION["fractions"],
+    "ico_fractions": [0.5],
+    "models": ["unsigned", "signed"],
+    "strategies": ["random", "degree", "leverage"],
+    "budgets": ICO["budgets"],
+    "realizations": SIMULATION["realizations"],
+    "seed": SIMULATION["seed"],
+    "max_steps": SIMULATION["max_steps"],
+    "phi_c_threshold": ICO["phi_c_threshold"],
+}
+
+
+# Combined report: read saved outputs; no simulation settings.
+COMBINED = {
+    "results_dir": "results",
+    "output_dir": "results/combined",
+    "temporal_root": "reports/static_temporal",
+    "fraction": 0.5,
 }
 
 # Null Model B: degree-preserving rewiring. Betas were calibrated on the 10-core

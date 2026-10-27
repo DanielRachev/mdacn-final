@@ -12,7 +12,6 @@ from matplotlib.lines import Line2D
 
 from mdacn.characterisation import degree_distribution, fitted_degree_probabilities
 
-# One colour per strategy across figures.
 STRATEGY_COLORS = {
     "random": "tab:blue",
     "degree": "tab:orange",
@@ -494,46 +493,6 @@ def plot_intervention_comparison(
     plt.close(fig)
 
 
-def plot_phi_c_comparison(phi_c: pd.DataFrame, path: Path) -> None:
-    """Owner: Georgi. Save the critical budget Phi_c against the initial fraction.
-
-    One panel per model and one line per strategy. A run that never crossed is
-    left as a gap.
-    """
-    if phi_c.empty:
-        raise ValueError("No Phi_c results to plot")
-    required = {"model", "f", "strategy", "mean_phi_c"}
-    if not required <= set(phi_c):
-        raise ValueError(f"Phi_c table requires columns: {sorted(required)}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    models = sorted(phi_c["model"].unique())
-    fig, axes = plt.subplots(1, len(models), figsize=(5.5 * len(models), 4.8), sharey=True)
-    axes = np.atleast_1d(axes)
-    for axis, model in zip(axes, models, strict=True):
-        subset = phi_c.loc[phi_c["model"] == model]
-        for index, strategy in enumerate(sorted(subset["strategy"].unique())):
-            runs = subset.loc[subset["strategy"] == strategy].sort_values("f")
-            axis.plot(
-                runs["f"],
-                runs["mean_phi_c"],
-                "o-",
-                color=strategy_color(str(strategy), index),
-                label=strategy_label(str(strategy)),
-            )
-        axis.set_title(f"{model.capitalize()} model")
-        axis.set_xlabel("Initial negative fraction f")
-        axis.set_ylim(-0.01, 1.01)
-        axis.grid(alpha=0.2)
-        axis.legend(fontsize=8)
-    axes[0].set_ylabel("Critical budget Φ_c")
-    fig.suptitle(
-        "Critical contrarian budget per targeting strategy\nMean first crossing of g₋ < 0.5"
-    )
-    fig.tight_layout()
-    fig.savefig(path, dpi=160)
-    plt.close(fig)
-
-
 def _ensemble_interval(values: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return the mean and central 95% interval over realizations (axis 0), NaN-aware.
 
@@ -934,7 +893,8 @@ def plot_directed_roles(
         range(len(groups)), [f"{sign} pairs\n(n={signs.loc[sign, 'pairs']:,})" for sign in groups]
     )
     axes[1].set_ylabel("Fraction of ordered pairs with a reverse link")
-    axes[1].set_ylim(0, 1.4 * signs.loc[groups, "reverse_any_fraction"].max())
+    upper = max(0.05, 1.4 * float(signs.loc[groups, "reverse_any_fraction"].max()))
+    axes[1].set_ylim(0, upper)
     axes[1].set_title("Directed reciprocity")
 
     rates = bridges.set_index("scope")
@@ -968,6 +928,46 @@ def plot_directed_roles(
         axis.grid(alpha=0.2)
         axis.legend(fontsize=8)
     fig.suptitle("Directed roles, reciprocity, and community bridges in the core")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def plot_phi_c_comparison(phi_c: pd.DataFrame, path: Path) -> None:
+    """Owner: Georgi. Save the critical budget Phi_c against the initial fraction.
+
+    One panel per model and one line per strategy. A run that never crossed is
+    left as a gap.
+    """
+    if phi_c.empty:
+        raise ValueError("No Phi_c results to plot")
+    required = {"model", "f", "strategy", "mean_phi_c"}
+    if not required <= set(phi_c):
+        raise ValueError(f"Phi_c table requires columns: {sorted(required)}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    models = sorted(phi_c["model"].unique())
+    fig, axes = plt.subplots(1, len(models), figsize=(5.5 * len(models), 4.8), sharey=True)
+    axes = np.atleast_1d(axes)
+    for axis, model in zip(axes, models, strict=True):
+        subset = phi_c.loc[phi_c["model"] == model]
+        for index, strategy in enumerate(sorted(subset["strategy"].unique())):
+            runs = subset.loc[subset["strategy"] == strategy].sort_values("f")
+            axis.plot(
+                runs["f"],
+                runs["mean_phi_c"],
+                "o-",
+                color=strategy_color(str(strategy), index),
+                label=strategy_label(str(strategy)),
+            )
+        axis.set_title(f"{model.capitalize()} model")
+        axis.set_xlabel("Initial negative fraction f")
+        axis.set_ylim(-0.01, 1.01)
+        axis.grid(alpha=0.2)
+        axis.legend(fontsize=8)
+    axes[0].set_ylabel("Critical budget Φ_c")
+    fig.suptitle(
+        "Critical contrarian budget per targeting strategy\nMean first crossing of g₋ < 0.5"
+    )
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)

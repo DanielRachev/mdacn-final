@@ -115,8 +115,8 @@ def rewire(
     integrated score; zero-sign edges carry no signed influence and are always
     swapped without steering. rule='unbiased' accepts every valid swap and is the
     degree-preserving reference. beta is required only for rule='metropolis',
-    which allows short-term decrease of the score.
-    checkpoint_interval > 0 records counts every that many attempts.
+    which allows short-term decrease of the score. checkpoint_interval > 0
+    records a checkpoint every checkpoint_interval attempts.
 
     attempts is the maximum. With window > 0, the run also stops once the tracked
     score changes by at most tolerance * (positive + negative edges) over the last

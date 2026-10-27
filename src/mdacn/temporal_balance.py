@@ -327,7 +327,7 @@ def run_temporal_balance_analysis(
     graph = load_graph(graph_path)
     edges = signed_edges(graph)
     triangles = triangle_edges(edges)
-    events = filter_core_events(load_interactions(input_path, post_ids=True), edges.nodes)
+    events = filter_core_events(load_interactions(input_path, include_post_id=True), edges.nodes)
     print(
         f"Temporal balance: {len(events):,} core events, {len(triangles):,} triangles",
         flush=True,
