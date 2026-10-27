@@ -12,6 +12,7 @@ from mdacn.impact_pipeline import _read_features, save_impact_reports
 from mdacn.impact_workflow import run_node_impact
 from mdacn.nco_pipeline import run_nco_experiment, run_sign_shuffle_experiment, save_nco_reports
 from mdacn.pipeline import characterise
+from mdacn.targeting_pipeline import save_targeting_scores
 
 STAGES = (
     "setup",
@@ -111,6 +112,14 @@ def run_stage(stage: str, **overrides) -> None:
     elif stage == "centrality":
         _require([paths["core"], paths["nodes"]], "characterise")
         save_centrality_scores(paths["core"])
+    elif stage == "targeting-scores":
+        options = {
+            "graph_path": paths["core"],
+            "activity_path": None,
+            **overrides,
+        }
+        _require([options["graph_path"], paths["communities"]], "characterise")
+        save_targeting_scores(**options)
     elif stage == "features":
         run_features()
     elif stage in ("nco", "sign-shuffle", "ico"):

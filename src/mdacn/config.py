@@ -40,6 +40,8 @@ def processed_paths(processed: Path) -> dict:
         "signed_leverage": processed / "signed_leverage.csv",
         "incident_signs": processed / "incident_signs.csv",
         "temporal_activity": processed / "temporal_activity.csv",
+        "temporal_bridge": processed / "temporal_bridge_centrality.csv",
+        "targeting_metadata": processed / "targeting_scores.json",
         "features": processed / "node_features.csv",
         "feature_metadata": processed / "node_features.json",
     }
