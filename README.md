@@ -30,8 +30,10 @@ uv run python -m mdacn reports
 | Command | Action |
 | --- | --- |
 | `run` | Run all implemented stages in the order shown above. |
-| `setup` | Download the body TSV; reuse an existing file. |
+| `setup` | Download the body TSV (or title TSV with `--dataset title`); reuse an existing file. |
 | `characterise` | Aggregate interactions, extract a core, compute metrics, and export graphs and matrices. |
+| `compare-extractions` | Compare k = 8, 10, 12 and activity >= 100, exporting each core separately. |
+| `compare-link-sources` | Compare body/title coverage, overlap, signs, and 10-core membership. |
 | `centrality` | Run the existing degree, betweenness, eigenvector, and leverage implementations and save aligned scores. |
 | `targeting-scores` | Save the proposed signed-leverage and temporal-activity bridge scores used by `ico`. |
 | `features` | Read expected contributor output files, then merge and validate their scores. |
@@ -96,6 +98,19 @@ Simulation stages load `unsigned.npz`, `signed.npz`, and `nodes.json` produced b
 `ico` takes its budget grid from `ICO["budgets"]`; fractions and repeated-run
 settings use `SIMULATION`. `reports` reads its saved results without rerunning it.
 
+Run Jacek's structural comparisons separately from the simulation experiments:
+
+```bash
+uv run python -m mdacn compare-extractions
+uv run python -m mdacn setup --dataset title
+uv run python -m mdacn compare-link-sources
+```
+
+The extraction comparison uses seed 0 and writes to its own output directories.
+It exports each graph with its matching matrices and `nodes.json`; changing
+extraction changes the node set. The title audit measures feasibility without
+running opinion dynamics. See [measured findings and handoff](docs/extraction_comparison.md).
+
 `sign-shuffle` shows a progress bar with elapsed time and ETA. Each step completes
 one empirical/shuffled pair. The sweep reuses the core topology to avoid copying
 the graph for each realization.
@@ -130,7 +145,7 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 
 | Location | Contents |
 | --- | --- |
-| `data/raw/` | Downloaded body TSV. |
+| `data/raw/` | Downloaded body and optional title TSVs. |
 | `data/processed/aggregate.graphml`, `core.graphml` | Graphs with interaction counts and edge signs; core includes community labels. |
 | `data/processed/unsigned.npz`, `signed.npz`, `nodes.json`, `network_metadata.json` | Aligned core matrices, node order, and file/core identity checks. |
 | `data/processed/centrality.csv`, `centrality.json` | Existing centrality scores, raw degrees, and input/output checksums. |
@@ -145,6 +160,9 @@ NCO rules, experiment settings, and measured results: [NCO baseline](docs/nco_ba
 | `results/sign_shuffle/` | Sign-shuffle results, component summaries/figures, metadata, and node order. |
 | `results/ico/` | `intervention_sweep.csv`, run settings and node order; `reports` adds `intervention_summary.csv` and comparison PNGs per initial fraction. |
 | `results/node_impact/` | Run config and `study/` containing frozen core features, paired outcomes, and `analysis/`. |
+| `data/processed/extraction_comparison/<configuration>/` | Separate core graphs, aligned matrices and metadata, communities, and node orders for Georgi. |
+| `results/extraction_comparison/` | Comparison CSV/JSON, per-core metrics, degree distributions, tables, and figures. |
+| `results/link_sources/` | Body/title summaries, overlap CSV/JSON, and a core-membership table. |
 
 Generated files are ignored by Git. Reruns replace outputs in the selected
 directories. Rerun preprocessing after changing data rules.

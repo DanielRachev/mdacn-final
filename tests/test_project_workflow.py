@@ -22,6 +22,7 @@ def project(tmp_path, monkeypatch):
         "PATHS",
         {
             "dataset": str(dataset),
+            "title_dataset": str(tmp_path / "title.tsv"),
             "processed_dir": str(tmp_path / "processed"),
             "results_dir": str(tmp_path / "results"),
         },

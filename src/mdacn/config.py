@@ -4,6 +4,7 @@ from pathlib import Path
 
 PATHS = {
     "dataset": "data/raw/soc-RedditHyperlinks-body.tsv",
+    "title_dataset": "data/raw/soc-RedditHyperlinks-title.tsv",
     "processed_dir": "data/processed",
     "results_dir": "results",
 }
