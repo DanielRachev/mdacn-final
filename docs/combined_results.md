@@ -26,6 +26,8 @@ figures. It does not rerun simulations. Missing inputs are reported in
 | Filtering stages | `label-audit` (PR 13) | `results/label_audit/filtering_stages.csv` | No |
 | Sign fractions | `directed-roles` (PR 13) | `results/directed_roles/sign_fractions.csv` | No |
 | Incident-sign summary | `incident-signs` | `results/incident_signs/r_neg_summary.csv` | No |
+| Signed-triad summary | `signed-triads` (PR 13) | `results/signed_triads/triad_summary.csv` | No |
+| Triad sign patterns | `signed-triads` (PR 13) | `results/signed_triads/triad_sign_patterns.csv` | No |
 
 Run each producing stage first when its output is wanted:
 
@@ -80,6 +82,8 @@ Under `results/combined/`:
 | `context_filtering_stages.csv` | Label-audit filtering stages, when available |
 | `context_directed_roles.csv` | Directed-role sign fractions, when available |
 | `context_incident_signs.csv` | Incident-sign summary, when available |
+| `context_signed_triads.csv` | Signed-triad summary, when available |
+| `context_triad_patterns.csv` | Empirical signed-triad sign patterns, when available |
 
 Figures:
 
@@ -207,14 +211,25 @@ Record the commands and settings beside the slides:
 uv run python -m mdacn setup
 uv run python -m mdacn characterise
 uv run python -m mdacn centrality
+uv run python -m mdacn directed-roles
 uv run python -m mdacn targeting-scores
+uv run python -m mdacn features
 uv run python -m mdacn nco
 uv run python -m mdacn sign-shuffle
 uv run python -m mdacn ico --fractions 0.3 0.4 0.5 0.6 0.7
+uv run python -m mdacn node-impact
+uv run python -m mdacn rewire
+uv run python -m mdacn rewire-ico
+uv run python -m mdacn incident-signs
+uv run python -m mdacn signed-triads
+uv run python -m mdacn label-audit
+uv run python -m mdacn reports
 uv run python -m mdacn compare-extractions --seed 0
 uv run python -m mdacn sensitivity --strategies random degree betweenness eigenvector leverage signed_leverage temporal_bridge --skip-nco
+uv run python scripts/run_static_temporal_comparison.py --fractions 0.3 0.5 0.7 --initializations 20 --shuffles 20 --bootstrap 1000
 uv run python -m mdacn combined-results
 ```
 
-Add the producing commands for the temporal, rewiring, node-impact, label-audit,
-and directed-role outputs when those are present.
+`directed-roles` produces `incident_signs.csv` for `features`. The temporal
+activity export remains external. The temporal script writes its run under
+`reports/static_temporal/`, which `combined-results` discovers automatically.

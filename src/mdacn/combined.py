@@ -241,6 +241,8 @@ def _write_context(
         ("label_audit", results_dir / "label_audit" / "filtering_stages.csv"),
         ("directed_roles", results_dir / "directed_roles" / "sign_fractions.csv"),
         ("incident_signs", results_dir / "incident_signs" / "r_neg_summary.csv"),
+        ("signed_triads", results_dir / "signed_triads" / "triad_summary.csv"),
+        ("triad_patterns", results_dir / "signed_triads" / "triad_sign_patterns.csv"),
     )
     for name, path in specs:
         table = _read_optional(path, name)
