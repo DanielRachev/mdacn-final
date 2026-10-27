@@ -60,6 +60,13 @@ def stage_paths() -> dict:
         "sign-shuffle": results / "sign_shuffle",
         "ico": results / "ico",
         "node-impact": results / "node_impact",
+        "rewire": results / "rewiring",
+        "rewire-ico": results / "rewiring_ico",
+        "incident-signs": results / "incident_signs",
+        "signed-triads": results / "signed_triads",
+        "temporal-balance": results / "temporal_balance",
+        "directed-roles": results / "directed_roles",
+        "label-audit": results / "label_audit",
     }
 
 
@@ -77,6 +84,42 @@ ICO = {
     ],
     "phi_c_threshold": 0.5,
 }
+
+# Null Model B: degree-preserving rewiring. Betas were calibrated on the 10-core
+# (docs/null_models.md): insular below, near, and above the empirical score.
+REWIRING = {
+    "replicates": 5,
+    "attempts_per_edge": 100,
+    "window_per_edge": 2.0,
+    "tolerance": 0.002,
+    "checkpoints": 20,
+    "seed": 0,
+    "betas": {"insular": [1.0, 2.0, 4.0], "integrated": [0.5, 1.0, 2.0]},
+}
+
+# Signed ICO on the empirical and rewired graphs; its finer budget grid resolves
+# Phi_c differences between 0.03 and 0.10.
+REWIRED_ICO = {
+    "budgets": [0.0, 0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.25],
+    "negative_fraction": 0.5,
+    "initializations": 20,
+    "strategies": ["degree", "random"],
+    "seed": 0,
+    "max_steps": SIMULATION["max_steps"],
+}
+
+
+# Signed-structure analyses. Sign shuffles share their seeds across incident signs
+# and triads, so both compare against the same shuffled cores.
+INCIDENT_SIGNS = {
+    "realizations": 1000,
+    "seed": 0,
+    "bins": "width",
+    "bin_width": 0.025,
+    "n_bins": 20,
+}
+SIGNED_TRIADS = {"realizations": 1000, "er_realizations": 20, "seed": 0}
+TEMPORAL_BALANCE = {"realizations": 200, "seed": 0, "frequency": "Q"}
 
 
 # Node-impact overrides and settings specific to that workflow.

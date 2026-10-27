@@ -41,12 +41,15 @@ def download_dataset(path: Path, *, dataset: Literal["body", "title"] = "body") 
     return path
 
 
-def load_interactions(path: Path, *, include_post_id: bool = False) -> pd.DataFrame:
+def load_interactions(
+    path: Path, *, include_post_id: bool = False, post_ids: bool = False
+) -> pd.DataFrame:
     """Owner: Jacek. Read a body/title TSV into the interaction table contract.
 
     Return source, target, sentiment, and timestamp columns. Preserve directed
     events and repeated interactions. Optionally retain post_id for overlap audits.
     """
+    include_post_id = include_post_id or post_ids
     columns = {
         "SOURCE_SUBREDDIT": "source",
         "TARGET_SUBREDDIT": "target",
@@ -82,12 +85,11 @@ def load_interactions(path: Path, *, include_post_id: bool = False) -> pd.DataFr
     return interactions
 
 
-def aggregate_edges(interactions: pd.DataFrame) -> nx.Graph:
-    """Owner: Jacek. Return a simple undirected graph of non-self interactions.
+def edge_sign_counts(interactions: pd.DataFrame) -> pd.DataFrame:
+    """Return u < v, n_positive, n_negative, and majority sign per unordered pair.
 
-    Each edge records n_positive, n_negative, and sign across both directions.
-    Its sign is the sign of n_positive - n_negative. Equal counts give sign 0;
-    the edge remains in the unsigned topology but has no signed influence.
+    Self-links are dropped and both directions are merged. The sign is the sign of
+    n_positive - n_negative; equal counts give 0.
     """
     events = interactions.loc[interactions["source"] != interactions["target"]]
     endpoints = np.sort(events[["source", "target"]].to_numpy(dtype=str), axis=1)
@@ -102,18 +104,31 @@ def aggregate_edges(interactions: pd.DataFrame) -> nx.Graph:
         )
         .groupby(["u", "v"], sort=True)
         .sum()
+        .reset_index()
     )
+    counts["sign"] = np.sign(counts["n_positive"] - counts["n_negative"]).astype(int)
+    return counts
 
+
+def aggregate_edges(interactions: pd.DataFrame) -> nx.Graph:
+    """Owner: Jacek. Return a simple undirected graph of non-self interactions.
+
+    Each edge records n_positive, n_negative, and sign across both directions.
+    Its sign is the sign of n_positive - n_negative. Equal counts give sign 0;
+    the edge remains in the unsigned topology but has no signed influence.
+    """
     graph = nx.Graph()
     graph.add_nodes_from(sorted(set(interactions["source"]) | set(interactions["target"])))
 
-    for u, v, n_positive, n_negative in counts.reset_index().itertuples(index=False, name=None):
+    for u, v, n_positive, n_negative, sign in edge_sign_counts(interactions).itertuples(
+        index=False, name=None
+    ):
         graph.add_edge(
             u,
             v,
             n_positive=int(n_positive),
             n_negative=int(n_negative),
-            sign=int(np.sign(n_positive - n_negative)),
+            sign=int(sign),
         )
 
     for node in graph:
