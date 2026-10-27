@@ -103,6 +103,17 @@ def main() -> None:
             command.add_argument("--budgets", type=float, nargs="+", default=config.ICO["budgets"])
 
     commands.add_parser("centrality", help="Calculate and save the existing core centrality scores")
+    targeting = commands.add_parser(
+        "targeting-scores",
+        help="Save the proposed signed-leverage and temporal-activity bridge scores",
+    )
+    targeting.add_argument("--graph", type=Path, default=paths["core"])
+    targeting.add_argument(
+        "--activity",
+        type=Path,
+        default=None,
+        help="Optional per-node activity CSV with node and temporal_activity columns",
+    )
     commands.add_parser("features", help="Save node scores for subsequent experiments")
     commands.add_parser("node-impact", help="Run paired interventions using saved node scores")
     commands.add_parser(
@@ -141,6 +152,12 @@ def main() -> None:
                 args.title_input,
                 k=args.k,
                 results_dir=args.results_dir,
+            )
+        elif args.command == "targeting-scores":
+            run_stage(
+                "targeting-scores",
+                graph_path=args.graph,
+                activity_path=args.activity,
             )
         elif args.command in simulation_commands:
             run_stage(
