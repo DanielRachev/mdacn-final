@@ -1,4 +1,4 @@
-"""Command-line entry points for preprocessing, dynamics, and impact analysis."""
+"""Command-line entry points for preprocessing, dynamics, null models, and analyses."""
 
 import argparse
 from pathlib import Path
@@ -102,6 +102,50 @@ def main() -> None:
         if name == "ico":
             command.add_argument("--budgets", type=float, nargs="+", default=config.ICO["budgets"])
 
+    configured = {
+        "rewire": (
+            "Export degree-preserving rewired graphs (reference, insular, integrated)",
+            config.REWIRING,
+            {"--graph": paths["core"], "--metrics": paths["topology"] / "metrics.json"},
+        ),
+        "rewire-ico": (
+            "Compare signed ICO Phi_c on the empirical and rewired graphs",
+            config.REWIRED_ICO,
+            {"--graph": paths["core"], "--rewired-dir": paths["rewire"]},
+        ),
+        "incident-signs": (
+            "Compare the negative incident ratio with sign-shuffled cores",
+            config.INCIDENT_SIGNS,
+            {"--graph": paths["core"]},
+        ),
+        "signed-triads": (
+            "Count signed triads and compare balance with null models",
+            config.SIGNED_TRIADS,
+            {"--graph": paths["core"], "--rewired-dir": paths["rewire"] / "graphs" / "reference"},
+        ),
+        "temporal-balance": (
+            "Predict triangle closing signs from earlier wedge signs (P-O-X)",
+            config.TEMPORAL_BALANCE,
+            {"--input": paths["dataset"], "--graph": paths["core"]},
+        ),
+        "directed-roles": (
+            "Directed roles, reciprocity, and bridges; export incident_signs.csv",
+            {},
+            {"--input": paths["dataset"], "--graph": paths["core"]},
+        ),
+        "label-audit": (
+            "Audit post labels and repeated rows; count rows at each filtering stage",
+            {},
+            {"--input": paths["dataset"], "--graph": paths["core"]},
+        ),
+    }
+    for name, (help_text, settings, inputs) in configured.items():
+        command = commands.add_parser(name, help=help_text)
+        for flag, default in inputs.items():
+            command.add_argument(flag, type=Path, default=default)
+        command.add_argument("--results-dir", type=Path, default=paths[name])
+        _add_setting_options(command, settings)
+
     commands.add_parser("centrality", help="Calculate and save the existing core centrality scores")
     commands.add_parser("features", help="Save node scores for subsequent experiments")
     commands.add_parser("node-impact", help="Run paired interventions using saved node scores")
@@ -153,10 +197,65 @@ def main() -> None:
                 max_steps=args.max_steps,
                 **({"budgets": tuple(args.budgets)} if args.command == "ico" else {}),
             )
+        elif args.command in configured:
+            _, settings, inputs = configured[args.command]
+            run_stage(
+                args.command,
+                **{_keyword(flag): getattr(args, _attribute(flag)) for flag in inputs},
+                results_dir=args.results_dir,
+                **_setting_values(args, settings),
+            )
         else:
             run_stage(args.command)
     except Exception as error:
         parser.exit(1, f"{parser.prog}: {error}\n")
+
+
+def _attribute(flag: str) -> str:
+    """Return the argparse attribute that stores a flag's value."""
+    return flag.removeprefix("--").replace("-", "_")
+
+
+def _keyword(flag: str) -> str:
+    """Return the stage keyword for an input flag; file inputs end in _path."""
+    name = _attribute(flag)
+    return f"{name}_path" if name in ("graph", "metrics", "input") else name
+
+
+def _add_setting_options(command: argparse.ArgumentParser, settings: dict) -> None:
+    """Add one option per config setting, defaulting to its config value.
+
+    Lists take several values; a dict of lists such as betas becomes one option
+    per key, e.g. --insular-betas.
+    """
+    for name, default in settings.items():
+        if isinstance(default, dict):
+            for key, values in default.items():
+                command.add_argument(
+                    f"--{key}-{name}".replace("_", "-"),
+                    dest=f"{key}_{name}",
+                    type=type(values[0]),
+                    nargs="+",
+                    default=values,
+                )
+        elif isinstance(default, list):
+            command.add_argument(
+                f"--{name}".replace("_", "-"), type=type(default[0]), nargs="+", default=default
+            )
+        else:
+            command.add_argument(f"--{name}".replace("_", "-"), type=type(default), default=default)
+
+
+def _setting_values(args: argparse.Namespace, settings: dict) -> dict:
+    """Collect parsed config options back into the shape of their config entry."""
+    return {
+        name: (
+            {key: getattr(args, f"{key}_{name}") for key in default}
+            if isinstance(default, dict)
+            else getattr(args, name)
+        )
+        for name, default in settings.items()
+    }
 
 
 if __name__ == "__main__":

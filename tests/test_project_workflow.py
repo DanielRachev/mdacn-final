@@ -10,8 +10,15 @@ def project(tmp_path, monkeypatch):
     matplotlib.use("Agg")
     dataset = tmp_path / "body.tsv"
     pd.DataFrame(
-        [(f"n{i}", f"n{i + 1}", 1, "2020-01-01 00:00:00") for i in range(5)],
-        columns=["SOURCE_SUBREDDIT", "TARGET_SUBREDDIT", "LINK_SENTIMENT", "TIMESTAMP"],
+        [(f"n{i}", f"n{i + 1}", f"p{i}", 1, "2020-01-01 00:00:00", "1.0,0.5") for i in range(5)],
+        columns=[
+            "SOURCE_SUBREDDIT",
+            "TARGET_SUBREDDIT",
+            "POST_ID",
+            "LINK_SENTIMENT",
+            "TIMESTAMP",
+            "PROPERTIES",
+        ],
     ).to_csv(
         dataset,
         sep="\t",
@@ -69,6 +76,14 @@ def project(tmp_path, monkeypatch):
         scores[["node", *columns]].to_csv(paths[output], index=False)
     monkeypatch.setattr(config, "ICO", {"budgets": [0.0, 0.25]})
     monkeypatch.setattr(
+        config, "REWIRING", {**config.REWIRING, "replicates": 1, "attempts_per_edge": 5}
+    )
+    monkeypatch.setattr(config, "REWIRED_ICO", {**config.REWIRED_ICO, "initializations": 2})
+    monkeypatch.setattr(config, "INCIDENT_SIGNS", {**config.INCIDENT_SIGNS, "realizations": 5})
+    monkeypatch.setattr(
+        config, "SIGNED_TRIADS", {**config.SIGNED_TRIADS, "realizations": 5, "er_realizations": 2}
+    )
+    monkeypatch.setattr(
         config,
         "NODE_IMPACT",
         {
@@ -83,23 +98,35 @@ def project(tmp_path, monkeypatch):
 
 
 def test_full_pipeline_and_individual_stages_produce_same_saved_runs(project, monkeypatch):
-    sources = [project[name] for name in ("signed_leverage", "incident_signs", "temporal_activity")]
+    # directed-roles runs inside run and replaces the fixture's incident_signs.csv.
+    sources = [project[name] for name in ("signed_leverage", "temporal_activity")]
     original_files = [path.read_bytes() for path in sources]
-    original_scores = pd.concat(
-        [pd.read_csv(path).set_index("node") for path in sources], axis=1
-    ).reset_index()
     workflow.run_project()
+    incident = pd.read_csv(project["incident_signs"])
+    assert incident.columns.tolist() == ["node", "negative_incident_ratio", "signed_bridge_ratio"]
+    original_scores = pd.concat(
+        [pd.read_csv(path).set_index("node") for path in [*sources, project["incident_signs"]]],
+        axis=1,
+    ).reset_index()
     pd.testing.assert_frame_equal(
         pd.read_csv(project["features"])[original_scores.columns], original_scores, check_like=True
     )
     assert project["features"].is_file() and project["feature_metadata"].is_file()
     assert (project["topology"] / "metrics.json").is_file()
     assert (project["topology"] / "core_layout.csv").is_file()
+    for stage, filename in (
+        ("rewire", "rewiring_summary.csv"),
+        ("incident-signs", "node_incident_signs.csv"),
+        ("signed-triads", "triad_realizations.csv"),
+        ("label-audit", "label_audit.json"),
+    ):
+        assert (project[stage] / filename).is_file()
     artifacts = [
         project["nco"] / "fraction_sweep.csv",
         project["sign-shuffle"] / "sign_shuffle_sweep.csv",
         project["ico"] / "intervention_sweep.csv",
         project["node-impact"] / "study/runs.csv",
+        project["rewire-ico"] / "phi_c_runs.csv",
     ]
     expected = [pd.read_csv(path) for path in artifacts]
     assert (project["nco"] / "fraction_summary.csv").is_file()
