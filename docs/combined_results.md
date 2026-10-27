@@ -121,14 +121,15 @@ branch. The manifest names exactly what is missing.
 
 ## Measured run
 
-Run on 26 October 2026 against the default connected 10-core, with the ICO
-sweep at `f = 0.3, 0.4, 0.5, 0.6, 0.7` and all seven strategies.
+Run on 26 and 27 October 2026 against the default connected 10-core, with the
+ICO sweep at `f = 0.3, 0.4, 0.5, 0.6, 0.7` and all seven strategies.
 
-**Available:** NCO, sign-shuffle, ICO, sensitivity, the extraction comparison,
-node-impact, and a local temporal reproduction. Fourteen inputs were present.
+**Available:** all 22 inputs: NCO, sign-shuffle, ICO, rewiring and rewire-ICO,
+node-impact, temporal, sensitivity, extraction comparison, label audit,
+directed roles, incident signs, and signed triads. `warnings.txt` is empty.
 
-**Missing:** rewiring, label audit, directed roles, and incident signs. Six
-entries are listed in `inputs.json` and `warnings.txt`.
+**Missing:** none in the integration run. On the PR3 branch alone, the
+PR13-owned outputs are still absent until PR13 merges.
 
 The available results:
 
@@ -169,8 +170,10 @@ The available results:
     effects are at `f = 0.5`. The minority-LCC difference at `f = 0.5` is not
     distinguishable from zero.
 
-- The node-impact reproduction used all 2,896 core nodes, 20 realisations, and
-  locally derived `incident_signs.csv` and `temporal_activity.csv` files. At
+- The node-impact reproduction used all 2,896 core nodes and 20 realisations.
+  The canonical `incident_signs.csv` from `directed-roles` is identical to the
+  locally derived file used for this run; `temporal_activity.csv` remains a
+  locally derived lifetime interaction count. At
   `f = 0.5`, signed model, the strongest Pearson correlation with mean impact is
   the negative incident ratio at -0.232 (95% interval -0.253 to -0.145), followed
   by degree at -0.155 (-0.238 to -0.053), betweenness at -0.134 (-0.217 to
@@ -185,9 +188,47 @@ The available results:
   the top nodes, and many `f = 0.5` baselines are already fragmented. The
   structural predictors are weak.
 
-The combined report and deck still need the rewiring section and the PR13
-diagnostics: label audit, directed roles, and incident signs. Their paths are
-named in `inputs.json`, so they can be added without changing the command.
+- The rewiring run produced 55 graphs in 6:52. Every graph stayed connected and
+  converged. Achieved insular homophily ranges from 0.896 for
+  `insular_non_worsening` to 0.016 for `integrated_strict`; achieved integrated
+  homophily runs from 0.120 to 0.985. The unbiased reference reaches 0.230
+  insular and 0.774 integrated. The empirical graph is 0.531 and 0.479.
+- `Phi_c` for degree targeting is 0.030 on the empirical graph, 0.054 on the
+  unbiased reference, 0.026 to 0.042 across the insular configurations, and
+  0.028 to 0.054 across the integrated configurations. Random targeting stays
+  at 0.000 for the empirical, reference, and most integrated graphs, and rises
+  to 0.060 to 0.084 only for the most insular configurations, with wide
+  intervals. Random remains much worse.
+- Paired against the empirical graph at `Phi = 0.1`, degree targeting has a
+  `g_minus` difference of -0.0204 (95% interval -0.0265 to -0.0151) on most
+  rewired graphs. The two most insular configurations are not distinguishable:
+  `insular_strict` is +0.0009 (-0.0020 to 0.0031) and
+  `insular_non_worsening` is +0.0095 (-0.0005 to 0.0205). Rewiring does not make
+  degree targeting harder; most configurations are slightly easier.
+- Signed triads: the empirical balanced fraction is 0.8319 among nonzero
+  triangles, against 0.8104 under sign shuffling (z = 6.4, p = 0.001), 0.7999
+  under degree-preserving rewiring (five replicates, so p is coarse), and
+  0.8112 for Erdős–Rényi. Among nonzero triangles the empirical graph has 81.0%
+  `+++`, 16.7% `++-`, 2.15% `+--`, and 0.09% `---`; it has more `+++` and `+--`
+  and fewer `++-` than the shuffled null. It also has 42,403 zero-sign triangles
+  against 27,357 under shuffling.
+- Incident signs are strongly concentrated: zero fraction 0.357 against 0.219,
+  variance 0.0065 against 0.0034, and a top-5% share of negative edge ends of
+  0.438 against 0.339. All three have p = 0.001.
+- Directed roles: negative edges are more common between communities than
+  within, 8.36% against 6.03%; negative events are 11.94% between against 8.65%
+  within. Negative pairs are slightly more reciprocal than positive pairs, 24.2%
+  against 23.1%, while the density reference is 0.78%.
+- The label audit reproduces the published filtering table exactly: 286,561 body
+  rows, 259,092 posts, 35,776 nodes, 124,330 undirected edges, 1,983 zero-sign
+  edges; the core has 159,180 rows, 140,761 posts, 2,896 nodes, 58,466 edges,
+  and 1,469 zero-sign edges. No post has mixed sentiment.
+
+Every expected input is present in the integration run and `warnings.txt` is
+empty. The scratch branch `scratch/full-integration` contains the resolved PR13
+merge plus PR1, PR2, and PR3. The PR3 branch on its own still reports the six
+PR13-owned inputs as missing until PR13 merges. The missing stages took about
+1.5 hours in total: `rewire` 6:52, `rewire-ico` 13:59, and `node-impact` 1:00:32.
 
 ## Interpretation
 
