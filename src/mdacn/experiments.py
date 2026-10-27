@@ -9,6 +9,7 @@ from tqdm import tqdm
 from mdacn.backfire import backfire_metrics
 from mdacn.config import SIMULATION
 from mdacn.contracts import Model, NetworkMatrices, Strategy
+from mdacn.data import canonical_edges
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.evaluation import compute_opinion_components, compute_opinion_gcc
 from mdacn.interventions import RANKED_STRATEGIES, select_contrarians, simulate_ico
@@ -27,7 +28,7 @@ def shuffle_edge_signs(graph: nx.Graph, *, seed: int = 0) -> nx.Graph:
     if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
         raise ValueError("Sign shuffling requires a simple undirected graph without self loops")
 
-    edges = list(graph.edges(data=True))
+    edges = canonical_edges(graph)
     signs = [edge_data.get("sign") for _, _, edge_data in edges]
     if any(sign not in (-1, 0, 1) for sign in signs):
         raise ValueError("Every edge must have a sign of -1, 0, or +1")
@@ -162,7 +163,7 @@ def run_intervention_sweep(
     Georgi's. Return one row per strategy, budget, and realisation, including
     opposing cluster size, both opinion GCC fractions, the paired baseline
     fractions, their difference, and stop status. Seeds and baseline states
-    support comparison across strategies. Settle each baseline with the same
+    support comparison across budgets and strategies. Settle each baseline once with the same
     model before intervention. Raise RuntimeError if a baseline cycles or reaches
     the update limit; neither is a steady state. max_steps applies separately to
     both simulation stages.
@@ -191,25 +192,22 @@ def run_intervention_sweep(
         )
 
     matrix = network.signed if model == "signed" else network.unsigned
-    seeds = np.random.SeedSequence(seed).spawn(len(budgets) * realizations)
-
+    seeds = np.random.SeedSequence(seed).spawn(realizations)
     rows = []
-    for budget_index, budget in enumerate(budgets):
-        for realization in range(realizations):
-            initial_seed = int(
-                seeds[budget_index * realizations + realization].generate_state(1)[0]
+    for realization, child in enumerate(seeds):
+        initial_seed = int(child.generate_state(1)[0])
+        initial = initialize_opinions(
+            len(network.nodes), initial_negative_fraction, seed=initial_seed
+        )
+        baseline = simulate_nco(matrix, initial, model=model, max_steps=max_steps)
+        if baseline.stop_reason != "steady_state":
+            raise RuntimeError(
+                f"Baseline did not reach a steady state: {baseline.stop_reason} "
+                f"(model={model}, realization={realization}, "
+                f"initial_seed={initial_seed})"
             )
-            initial = initialize_opinions(
-                len(network.nodes), initial_negative_fraction, seed=initial_seed
-            )
-            baseline = simulate_nco(matrix, initial, model=model, max_steps=max_steps)
-            if baseline.stop_reason != "steady_state":
-                raise RuntimeError(
-                    f"Baseline did not reach a steady state: {baseline.stop_reason} "
-                    f"(model={model}, budget={budget}, realization={realization}, "
-                    f"initial_seed={initial_seed})"
-                )
-            baseline_gcc = compute_opinion_gcc(graph, baseline.final_state, nodes=network.nodes)
+        baseline_gcc = compute_opinion_gcc(graph, baseline.final_state, nodes=network.nodes)
+        for budget in budgets:
             for strategy in resolved:
                 score_map = None if strategy == "random" else tables[strategy]
                 contrarians = select_contrarians(
@@ -237,6 +235,7 @@ def run_intervention_sweep(
                         "realization": realization,
                         "seed": seed,
                         "initial_seed": initial_seed,
+                        "selection_seed": initial_seed + realization + len(strategy),
                         "n_nodes": len(network.nodes),
                         "contrarian_count": len(contrarians),
                         "baseline_steps": baseline.steps,
@@ -296,8 +295,8 @@ def run_sign_shuffle_fraction_sweep(
     if not n_nodes:
         raise ValueError("graph must have at least one node")
     node_index = {node: index for index, node in enumerate(empirical.nodes)}
-    # Preserve edge order so shuffle seeds still replay through shuffle_edge_signs.
-    edges = list(graph.edges(data="sign"))
+    # Canonical order replays independently of graph insertion or serialization order.
+    edges = [(u, v, data["sign"]) for u, v, data in canonical_edges(graph)]
     sources = np.array([node_index[u] for u, _, _ in edges], dtype=np.intp)
     targets = np.array([node_index[v] for _, v, _ in edges], dtype=np.intp)
     edge_rows = np.concatenate((sources, targets))

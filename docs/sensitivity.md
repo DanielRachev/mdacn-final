@@ -204,10 +204,9 @@ diverge, report the divergence and avoid presenting the k = 10 result as
 universal. The activity-LCC graph is reported separately because its smaller
 node set and different selection rule make a direct comparison imperfect.
 
-`Phi_c` is measured per realisation over the tested budget grid. The existing
-sweep assigns an independent initial state to each budget, so a per-run `Phi_c`
-is a minimum over budget-wise runs, not the first crossing of one fixed
-trajectory. Report it as an interval across realisations and keep the status
+`Phi_c` is measured per realisation over the tested budget grid. The corrected sweep reuses one initial state and settled baseline across all
+budgets, with nested random target sets. Historical measurements above used
+budget-wise independent initializations and are superseded by corrected runs. Report it as an interval across realisations and keep the status
 strings (`reached`, `reference below threshold at Phi = 0`, `not reached in the
 tested range`) visible.
 

@@ -216,3 +216,18 @@ uv run python -m mdacn rewire-ico
 
 Outputs are in `results/rewiring/` and `results/rewiring_ico/` (`phi_c_runs.csv`,
 `phi_c_summary.csv`, `g_minus_comparisons.csv`, `final_states.npz`).
+
+
+## Reproducible edge order and reference ensemble
+
+Seeded sign permutations and rewiring pools now use a canonical ordering of
+undirected endpoints. Metadata records `edge_order` and the SHA256 of the signed
+edge sequence, so insertion order cannot silently change the experiment. Existing
+serialized graphs and raw matrix outputs remain part of the experiment bundle.
+
+The default unbiased reference has 100 independent seeded graph runs; targeted
+configurations retain five replicates each. Set `reference_replicates` separately
+from `replicates`. This yields 150 rewired graphs in total under the default
+configuration list. The reference Monte Carlo p-value resolution improves from
+1/6 to 1/101. This increases ensemble resolution but does not establish that the
+swap chain samples the constrained graph space uniformly or has mixed fully.

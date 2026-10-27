@@ -119,7 +119,7 @@ Some inputs are not produced by a stage on `main`:
 In those cases, copy the saved directory from the owner, or run the producing
 branch. The manifest names exactly what is missing.
 
-## Measured run
+## Historical measured run (before paired-budget correction)
 
 Run on 26 and 27 October 2026 against the default connected 10-core, with the
 ICO sweep at `f = 0.3, 0.4, 0.5, 0.6, 0.7` and all seven strategies.
@@ -274,3 +274,13 @@ uv run python -m mdacn combined-results
 `directed-roles` produces `incident_signs.csv` for `features`. The temporal
 activity export remains external. The temporal script writes its run under
 `reports/static_temporal/`, which `combined-results` discovers automatically.
+
+
+## Corrected threshold figures
+
+The current ICO, extraction-sensitivity, and rewiring threshold figures show
+conditional threshold means and success fractions in separate rows. A dashed
+reference shows the share already below the criterion without intervention.
+Read failures as censored beyond the tested budget, and compare the eligible-run
+success rates in the CSV before ranking strategies. The historical measurements
+above retain their original independent budget-wise initializations.

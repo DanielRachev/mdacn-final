@@ -1,5 +1,6 @@
 """Reddit input, static core extraction, and shared graph export."""
 
+import hashlib
 import json
 from pathlib import Path
 from shutil import copyfileobj
@@ -20,6 +21,24 @@ DATASET_URLS = {
     for source in ("body", "title")
 }
 DATASET_URL = DATASET_URLS["body"]
+
+
+def canonical_edges(graph: nx.Graph) -> list[tuple]:
+    """Return undirected edge records ordered by their sorted endpoints."""
+    return sorted(
+        ((min(u, v), max(u, v), data) for u, v, data in graph.edges(data=True)),
+        key=lambda edge: (edge[0], edge[1]),
+    )
+
+
+def edge_order_metadata(graph: nx.Graph) -> dict:
+    """Identify the signed edge sequence consumed by seeded randomization."""
+    records = [(str(u), str(v), int(data["sign"])) for u, v, data in canonical_edges(graph)]
+    payload = json.dumps(records, separators=(",", ":")).encode()
+    return {
+        "edge_order": "canonical-endpoints-v1",
+        "signed_edge_sequence_sha256": hashlib.sha256(payload).hexdigest(),
+    }
 
 
 def download_dataset(path: Path, *, dataset: Literal["body", "title"] = "body") -> Path:

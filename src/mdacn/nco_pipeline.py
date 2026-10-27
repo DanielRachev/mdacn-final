@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from mdacn.artifacts import checksum, write_json
-from mdacn.data import load_graph, load_matrices
+from mdacn.data import edge_order_metadata, load_graph, load_matrices
 from mdacn.experiments import (
     DEFAULT_FRACTIONS,
     run_fraction_sweep,
@@ -45,6 +45,7 @@ def run_nco_experiment(
         "graph_path": str(graph_path.resolve()),
         "graph_sha256": graph_checksum,
         "graph_metadata": graph.graph,
+        **edge_order_metadata(graph),
         "n_nodes": len(network.nodes),
         "n_edges": graph.number_of_edges(),
         "negative_edges": sum(e["sign"] == -1 for _, _, e in graph.edges(data=True)),
@@ -98,6 +99,7 @@ def run_sign_shuffle_experiment(
         "graph_path": str(graph_path.resolve()),
         "graph_sha256": graph_checksum,
         "graph_metadata": graph.graph,
+        **edge_order_metadata(graph),
         "n_nodes": graph.number_of_nodes(),
         "n_edges": graph.number_of_edges(),
         "negative_edges": sum(e["sign"] == -1 for _, _, e in graph.edges(data=True)),

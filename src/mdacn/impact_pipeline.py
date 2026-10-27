@@ -190,7 +190,31 @@ def save_impact_reports(
             **_provenance(),
         },
     )
+    if "spillover_impact" in runs:
+        spillover = calculate_impact_statistics(
+            runs, features, bootstrap=bootstrap, seed=seed, outcome="spillover_impact"
+        )
+        for name, table in spillover.items():
+            table.to_csv(output / f"spillover_{name}.csv", index=False)
+        summary = impact_component_summary(runs)
+        summary.to_csv(output / "impact_components.csv", index=False)
     save_impact_plots(tables["node_impact"], tables["correlations"], output)
     print(tables["regression_diagnostics"].to_string(index=False))
     print(f"Saved analysis: {output}")
     return tables
+
+
+def impact_component_summary(runs: pd.DataFrame) -> pd.DataFrame:
+    """Separate direct GCC fragmentation from changes in unpinned opinions."""
+    eligible = runs[runs.eligible.astype(bool)]
+    return eligible.groupby(["model", "f"], as_index=False).agg(
+        runs=("node", "size"),
+        mean_total_impact=("impact", "mean"),
+        mean_direct_impact=("direct_impact", "mean"),
+        mean_spillover_impact=("spillover_impact", "mean"),
+        propagation_run_fraction=("unpinned_changes", lambda x: float((x > 0).mean())),
+        mean_unpinned_changes=("unpinned_changes", "mean"),
+        max_unpinned_changes=("unpinned_changes", "max"),
+        mean_unpinned_minus_to_plus=("unpinned_minus_to_plus", "mean"),
+        mean_unpinned_plus_to_minus=("unpinned_plus_to_minus", "mean"),
+    )

@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from scipy.sparse import csr_matrix, load_npz
 
 from mdacn.artifacts import checksum, write_json
-from mdacn.data import build_matrices, load_graph
+from mdacn.data import build_matrices, edge_order_metadata, load_graph
 from mdacn.plots import plot_signed_triads
 from mdacn.signed_structure import (
     SignedEdges,
@@ -255,6 +255,7 @@ def run_signed_triad_analysis(
         "graph_path": str(graph_path.resolve()),
         "graph_sha256": checksum(graph_path),
         "graph_metadata": graph.graph,
+        **edge_order_metadata(graph),
         "n_nodes": n_nodes,
         "n_edges": len(edges.signs),
         "triads": {"balanced": list(BALANCED), "unbalanced": ["++-", "---"]},

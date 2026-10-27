@@ -80,7 +80,9 @@ def project(tmp_path, monkeypatch):
         scores[["node", *columns]].to_csv(paths[output], index=False)
     monkeypatch.setattr(config, "ICO", {"budgets": [0.0, 0.25]})
     monkeypatch.setattr(
-        config, "REWIRING", {**config.REWIRING, "replicates": 1, "attempts_per_edge": 5}
+        config,
+        "REWIRING",
+        {**config.REWIRING, "replicates": 1, "reference_replicates": 1, "attempts_per_edge": 5},
     )
     monkeypatch.setattr(config, "REWIRED_ICO", {**config.REWIRED_ICO, "initializations": 2})
     monkeypatch.setattr(config, "INCIDENT_SIGNS", {**config.INCIDENT_SIGNS, "realizations": 5})
@@ -315,6 +317,7 @@ def test_ico_sweeps_saved_inputs_and_reports_without_simulation(project, monkeyp
     assert set(phi_c.status) <= {
         "reached",
         "not reached in the tested range",
+        "partially reached in the tested range",
         "reference below threshold at Phi = 0",
     }
     for model in ("unsigned", "signed"):

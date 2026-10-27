@@ -41,7 +41,9 @@ better targeting. A full-window activity score is retrospective.
 ## Procedure
 
 1. Assign a fraction `f` of nodes to `-1` with a recorded seed.
-2. Settle the baseline with the model under test. A cycle or update-limit
+2. Settle one baseline per model, fraction, and realization, and reuse it at every
+   budget and strategy. Random targets use prefixes of one seeded permutation,
+   so larger budgets retain the targets from smaller budgets. A cycle or update-limit
    baseline is not a steady state, so the run stops and reports its seeds.
 3. Pin the selected contrarians at `+1` from the settled state.
 4. Record `g_minus = S_minus_GCC / N`, `g_plus`, the paired baseline fractions,
@@ -69,11 +71,23 @@ targeting are measured, not assumed.
 ## Critical budget
 
 `Phi_c` is the smallest tested budget with `g_minus < ICO["phi_c_threshold"]`,
-0.5 by default. It is measured per run and then aggregated across realisations.
+0.5 by default. Only steady outcomes count as crossings. It is measured on a
+fixed-baseline trajectory and then aggregated across realizations. Historical
+budget-wise independent seed tables are rejected and must be rerun. This is an
+operational threshold on a finite graph, not a thermodynamic critical point.
+
+`phi_c_runs.csv` preserves each trajectory and censoring status. Summaries
+include `reached_runs`, `unreached_runs`, `zero_budget_runs`, `eligible_runs`,
+`intervention_reached_fraction`, and `mean_intervention_phi_c`. The latter two
+exclude baselines already below the criterion. `mean_phi_c` remains conditional
+on reaching the criterion; it is always plotted with the reached fraction and
+the zero-budget share. Unreached steady trajectories are censored beyond the
+maximum tested budget; nonsteady outcomes remain unresolved.
 
 | Status | Meaning |
 | --- | --- |
-| `reached` | At least one budget crossed; the mean and median cover those runs |
+| `reached` | All trajectories crossed; the mean and median cover those runs |
+| `partially reached in the tested range` | Some trajectories did not cross; the conditional mean excludes them |
 | `reference below threshold at Phi = 0` | The no-intervention reference was already below the threshold, so `Phi_c = 0` |
 | `not reached in the tested range` | No budget crossed and `mean_phi_c` is empty |
 
@@ -82,7 +96,7 @@ The status is separate from a threshold on the raw negative fraction `s_1`.
 ## Runtime
 
 The suite costs `fractions x models x budgets x realizations x strategies` runs,
-each with a baseline settle. The default 50-point grid gives about 98,000 runs,
+with one baseline settle per model/fraction/realization. The default 50-point grid gives about 98,000 runs,
 five times the unsigned three-strategy sweep. Use a narrower grid and refine near
 an observed threshold:
 

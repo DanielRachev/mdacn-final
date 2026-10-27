@@ -246,6 +246,8 @@ def test_critical_budgets():
             "replicate": [0] * 6,
             "strategy": ["degree"] * 6,
             "initialization": [0, 0, 0, 1, 1, 1],
+            "initial_seed": [0, 0, 0, 1, 1, 1],
+            "baseline_g_minus": [0.9] * 3 + [0.8] * 3,
             "budget": [0.0, 0.1, 0.2] * 2,
             "g_minus": [0.9, 0.4, 0.1, 0.8, 0.7, 0.6],
             "baseline_stop_reason": ["steady_state"] * 6,
@@ -431,7 +433,7 @@ def test_rewire_cli(tmp_path):
     _, graph_path = write_inputs(tmp_path)
     command = [sys.executable, "-m", "mdacn", "rewire", "--graph", str(graph_path)]
     command += ["--results-dir", str(tmp_path / "rw"), "--metrics", str(tmp_path / "m.json")]
-    command += ["--replicates", "1", "--attempts-per-edge", "2"]
+    command += ["--replicates", "1", "--reference-replicates", "1", "--attempts-per-edge", "2"]
     command += ["--insular-betas", "1", "--integrated-betas", "1", "2"]
     subprocess.run(command, check=True, capture_output=True)
     summary = pd.read_csv(tmp_path / "rw" / "rewiring_summary.csv")

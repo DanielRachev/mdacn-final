@@ -62,7 +62,7 @@ def select_contrarians(
     unique_nodes = tuple(dict.fromkeys(nodes))
     if strategy == "random":
         rng = np.random.default_rng(seed)
-        selection = rng.choice(len(unique_nodes), size=min(count, len(unique_nodes)), replace=False)
+        selection = rng.permutation(len(unique_nodes))[: min(count, len(unique_nodes))]
         return tuple(unique_nodes[int(index)] for index in sorted(selection))
     if strategy in RANKED_STRATEGIES:
         if scores is None:

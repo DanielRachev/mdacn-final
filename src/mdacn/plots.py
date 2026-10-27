@@ -11,6 +11,7 @@ import pandas as pd
 from matplotlib.lines import Line2D
 
 from mdacn.characterisation import degree_distribution, fitted_degree_probabilities
+from mdacn.threshold_plots import plot_threshold_summary
 
 STRATEGY_COLORS = {
     "random": "tab:blue",
@@ -934,40 +935,6 @@ def plot_directed_roles(
 
 
 def plot_phi_c_comparison(phi_c: pd.DataFrame, path: Path) -> None:
-    """Owner: Georgi. Save the critical budget Phi_c against the initial fraction.
-
-    One panel per model and one line per strategy. A run that never crossed is
-    left as a gap.
-    """
-    if phi_c.empty:
-        raise ValueError("No Phi_c results to plot")
-    required = {"model", "f", "strategy", "mean_phi_c"}
-    if not required <= set(phi_c):
-        raise ValueError(f"Phi_c table requires columns: {sorted(required)}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    models = sorted(phi_c["model"].unique())
-    fig, axes = plt.subplots(1, len(models), figsize=(5.5 * len(models), 4.8), sharey=True)
-    axes = np.atleast_1d(axes)
-    for axis, model in zip(axes, models, strict=True):
-        subset = phi_c.loc[phi_c["model"] == model]
-        for index, strategy in enumerate(sorted(subset["strategy"].unique())):
-            runs = subset.loc[subset["strategy"] == strategy].sort_values("f")
-            axis.plot(
-                runs["f"],
-                runs["mean_phi_c"],
-                "o-",
-                color=strategy_color(str(strategy), index),
-                label=strategy_label(str(strategy)),
-            )
-        axis.set_title(f"{model.capitalize()} model")
-        axis.set_xlabel("Initial negative fraction f")
-        axis.set_ylim(-0.01, 1.01)
-        axis.grid(alpha=0.2)
-        axis.legend(fontsize=8)
-    axes[0].set_ylabel("Critical budget Φ_c")
-    fig.suptitle(
-        "Critical contrarian budget per targeting strategy\nMean first crossing of g₋ < 0.5"
-    )
-    fig.tight_layout()
-    fig.savefig(path, dpi=160)
-    plt.close(fig)
+    """Show conditional thresholds with reached and zero-budget fractions."""
+    if not phi_c.empty:
+        plot_threshold_summary(phi_c, path)

@@ -118,6 +118,7 @@ COMBINED = {
 # (docs/null_models.md): insular below, near, and above the empirical score.
 REWIRING = {
     "replicates": 5,
+    "reference_replicates": 100,
     "attempts_per_edge": 100,
     "window_per_edge": 2.0,
     "tolerance": 0.002,

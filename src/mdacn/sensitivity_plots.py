@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from mdacn.threshold_plots import plot_threshold_summary
+
 CONFIG_COLORS = ("#2a78d6", "#eb6834", "#1baf7a", "#8c6bb1", "#e87ba4", "#7f7f7f")
 
 
@@ -179,43 +181,15 @@ def plot_ico_by_configuration(
 
 
 def plot_phi_c_by_configuration(phi_c: pd.DataFrame, path: Path, *, fraction: float = 0.5) -> None:
-    """Save Phi_c against core extraction, one panel per model and line per strategy."""
-    if phi_c.empty or "mean_phi_c" not in phi_c:
+    """Show conditional thresholds and success rates across core extractions."""
+    if phi_c.empty:
         return
-    fractions = np.sort(phi_c["f"].unique())
-    chosen = fractions[np.argmin(np.abs(fractions - fraction))]
-    subset = phi_c.loc[np.isclose(phi_c["f"].astype(float), float(chosen))]
-    models = sorted(subset["model"].unique())
-    configurations = _configurations(subset)
-    fig, axes = plt.subplots(1, len(models), figsize=(6 * len(models), 4.5), sharey=True)
-    axes = np.atleast_1d(axes)
-    positions = np.arange(len(configurations))
-    for axis, model in zip(axes, models, strict=True):
-        model_subset = subset.loc[subset["model"] == model]
-        strategies = sorted(model_subset["strategy"].unique())
-        for index, strategy in enumerate(strategies):
-            group = (
-                model_subset.loc[model_subset["strategy"] == strategy]
-                .set_index("configuration")
-                .reindex(configurations)
-            )
-            axis.plot(
-                positions,
-                group["mean_phi_c"].to_numpy(float),
-                "o-",
-                markersize=4,
-                linewidth=1.5,
-                color=_config_color(index),
-                label=strategy,
-            )
-        axis.set_xticks(positions, configurations, rotation=15, ha="right")
-        axis.set_title(f"{model.capitalize()} model")
-        axis.set_xlabel("Core extraction")
-        axis.grid(alpha=0.2)
-        axis.legend(fontsize=8)
-    axes[0].set_ylabel("Critical budget Phi_c")
-    fig.suptitle(f"Phi_c by core extraction at f = {chosen:g}")
-    _save(fig, path)
+    fractions = np.sort(phi_c.f.unique())
+    chosen = fractions[np.argmin(abs(fractions - fraction))]
+    subset = phi_c[np.isclose(phi_c.f, chosen)]
+    plot_threshold_summary(
+        subset, path, x="configuration", title=f"Paired thresholds at f={chosen:g}"
+    )
 
 
 def plot_topology_sign_fractions(topology: pd.DataFrame, path: Path) -> None:

@@ -66,6 +66,7 @@ def _ico_table():
                             "g_minus": value,
                             "g_plus": 1 - value,
                             "baseline_g_minus": baseline,
+                            "initial_seed": realization,
                             "delta_g_minus": value - baseline,
                             "backfired": False,
                             "negative_influence_links": 10,
@@ -109,6 +110,9 @@ def _fixture_tree(tmp_path):
                 "graph": ["reference", "insular_strict"],
                 "strategy": ["degree", "degree"],
                 "mean_phi_c": [0.05, 0.25],
+                "runs": [20, 20],
+                "reached_fraction": [1.0, 0.5],
+                "zero_budget_fraction": [0.0, 0.0],
                 "min_phi_c": [0.01, 0.1],
                 "max_phi_c": [0.1, 0.25],
             }

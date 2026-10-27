@@ -217,6 +217,8 @@ def _phi_frame(g_minus, budgets, strategy="degree", model="unsigned"):
             "realization": [0] * len(budgets),
             "budget": list(budgets),
             "g_minus": list(g_minus),
+            "initial_seed": [0] * len(budgets),
+            "baseline_g_minus": [g_minus[0]] * len(budgets),
         }
     )
 
@@ -257,6 +259,9 @@ def test_phi_c_comparison_figure_is_saved(tmp_path) -> None:
             "f": [0.5, 0.5, 0.5, 0.5],
             "strategy": ["degree", "signed_leverage", "degree", "signed_leverage"],
             "mean_phi_c": [0.1, 0.05, np.nan, 0.2],
+            "runs": [20] * 4,
+            "reached_fraction": [1, 1, 0, 1],
+            "zero_budget_fraction": [0] * 4,
         }
     )
     path = tmp_path / "phi_c.png"

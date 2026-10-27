@@ -17,7 +17,7 @@ from mdacn.artifacts import checksum, write_json
 from mdacn.centrality import leverage_centrality
 from mdacn.centrality_pipeline import load_centrality_scores
 from mdacn.contracts import NetworkMatrices, Strategy
-from mdacn.data import build_matrices, load_graph, load_matrices
+from mdacn.data import build_matrices, edge_order_metadata, load_graph, load_matrices
 from mdacn.dynamics import initialize_opinions, simulate_nco
 from mdacn.evaluation import compute_opinion_gcc
 from mdacn.interventions import select_contrarians, simulate_ico
@@ -31,6 +31,7 @@ from mdacn.rewiring import (
     validate_rewiring,
 )
 from mdacn.temporal_analysis import paired_bootstrap_interval
+from mdacn.thresholds import critical_budget_runs, summarize_thresholds
 
 DEFAULT_BETAS = {target: tuple(beta) for target, beta in config.REWIRING["betas"].items()}
 DEFAULT_BUDGETS = tuple(config.REWIRED_ICO["budgets"])
@@ -84,6 +85,7 @@ def run_rewiring_experiment(
     results_dir: Path = Path("results/rewiring"),
     specs: tuple[RewiringSpec, ...] | None = None,
     replicates: int = 5,
+    reference_replicates: int | None = None,
     attempts_per_edge: int = 100,
     window_per_edge: float = 2.0,
     tolerance: float = 0.002,
@@ -101,6 +103,12 @@ def run_rewiring_experiment(
     """
     if isinstance(replicates, bool) or not isinstance(replicates, int) or replicates < 1:
         raise ValueError("replicates must be a positive integer")
+    if reference_replicates is not None and (
+        isinstance(reference_replicates, bool)
+        or not isinstance(reference_replicates, int)
+        or reference_replicates < 1
+    ):
+        raise ValueError("reference_replicates must be a positive integer")
     if min(attempts_per_edge, window_per_edge, tolerance, checkpoints) < 0:
         raise ValueError("Attempt, window, tolerance, and checkpoint settings must be >= 0")
     specs = default_specs() if specs is None else tuple(specs)
@@ -136,7 +144,15 @@ def run_rewiring_experiment(
         connected=nx.is_connected(graph),
         connected_components=nx.number_connected_components(graph),
     )
-    jobs = [(spec, replicate) for spec in specs for replicate in range(replicates)]
+    jobs = [
+        (spec, replicate)
+        for spec in specs
+        for replicate in range(
+            reference_replicates
+            if spec.name == REFERENCE and reference_replicates is not None
+            else replicates
+        )
+    ]
     for spec, replicate in tqdm(jobs, desc="Rewiring", unit="graph", disable=not show_progress):
         graph_seed = stream_seed(seed, f"rewire:{spec.name}", replicate)
         result = rewire(
@@ -213,10 +229,14 @@ def run_rewiring_experiment(
         "empirical_centrality": str(processed["centrality"].resolve()),
         "empirical_centrality_sha256": checksum(processed["centrality"]),
         "graph_metadata": graph.graph,
+        **edge_order_metadata(graph),
         "n_nodes": len(graph),
         "n_edges": graph.number_of_edges(),
         "specs": [asdict(spec) for spec in specs],
         "replicates": replicates,
+        "reference_replicates": reference_replicates
+        if reference_replicates is not None
+        else replicates,
         "attempts_per_edge": attempts_per_edge,
         "max_attempts_per_graph": attempts,
         "window_per_edge": window_per_edge,
@@ -402,54 +422,43 @@ def run_rewired_ico_experiment(
 
 
 def critical_budgets(raw: pd.DataFrame, *, threshold: float = 0.5) -> pd.DataFrame:
-    """Return each run's first tested budget with g_minus below threshold.
-
-    A run is one graph, replicate, strategy, and initialization. Runs without a
-    settled baseline are excluded. all_steady flags runs whose ICO states all settled.
-    """
-    keys = ["graph", "replicate", "strategy", "initialization"]
-    settled = raw.loc[raw["baseline_stop_reason"] == "steady_state"]
-    rows = []
-    for key, group in settled.groupby(keys, sort=False):
-        group = group.sort_values("budget")
-        met = group.loc[group["g_minus"] < threshold, "budget"]
-        row = {
-            **dict(zip(keys, key, strict=True)),
-            "phi_c": float(met.iloc[0]) if len(met) else float("nan"),
-            "threshold_reached": bool(len(met)),
-            "all_steady": bool(group["stop_reason"].eq("steady_state").all()),
-        }
+    """Find steady crossings on each paired graph/replicate trajectory."""
+    settled = raw.loc[raw.baseline_stop_reason.eq("steady_state")]
+    frames = []
+    for (graph, replicate), group in settled.groupby(["graph", "replicate"], sort=False):
+        table = critical_budget_runs(
+            group.rename(columns={"initialization": "realization"}), threshold=threshold
+        )
+        table = table.rename(columns={"realization": "initialization"})
+        table["graph"], table["replicate"] = graph, replicate
         if "connected" in group:
-            row["connected"] = bool(group["connected"].iloc[0])
-        rows.append(row)
-    columns = [*keys, "phi_c", "threshold_reached", "all_steady"]
-    return pd.DataFrame(rows, columns=columns + (["connected"] if "connected" in raw else []))
+            table["connected"] = bool(group.connected.iloc[0])
+        frames.append(table)
+    return (
+        pd.concat(frames, ignore_index=True)
+        if frames
+        else pd.DataFrame(
+            columns=[
+                "graph",
+                "replicate",
+                "strategy",
+                "initialization",
+                "phi_c",
+                "threshold_reached",
+                "reference_below_threshold",
+                "all_steady",
+                "max_tested_budget",
+            ]
+        )
+    )
 
 
 def summarize_phi_c(
     phi_c: pd.DataFrame, *, rewiring_summary: pd.DataFrame | None = None
 ) -> pd.DataFrame:
-    """Count reached thresholds and summarize reached Phi_c per graph and strategy.
-
-    With rewiring_summary, add each configuration's mean achieved homophily (as a
-    fraction of its bound) and changed-edge fraction, so Phi_c can be read against
-    the configuration that was actually reached.
-    """
-    extra = (
-        {"disconnected_runs": ("connected", lambda s: int((~s.astype(bool)).sum()))}
-        if "connected" in phi_c
-        else {}
-    )
-    summary = phi_c.groupby(["graph", "strategy"], as_index=False, sort=False).agg(
-        runs=("phi_c", "size"),
-        reached=("threshold_reached", "sum"),
-        median_phi_c=("phi_c", "median"),
-        mean_phi_c=("phi_c", "mean"),
-        min_phi_c=("phi_c", "min"),
-        max_phi_c=("phi_c", "max"),
-        all_steady_runs=("all_steady", "sum"),
-        **extra,
-    )
+    """Keep failed and zero-budget trials beside conditional threshold means."""
+    summary = summarize_thresholds(phi_c, ["graph", "strategy"])
+    summary["reached"] = summary.reached_runs
     if rewiring_summary is None:
         return summary
     achieved = (

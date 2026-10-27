@@ -13,6 +13,7 @@ from mdacn.config import processed_paths
 from mdacn.data import load_graph, load_matrices
 from mdacn.experiments import ALL_STRATEGIES, run_intervention_sweep
 from mdacn.plots import plot_intervention_comparison, plot_phi_c_comparison
+from mdacn.thresholds import critical_budget_runs, summarize_thresholds
 
 # The opposing GCC counts as crossed below this share of the core.
 PHI_C_THRESHOLD = 0.5
@@ -123,6 +124,8 @@ def run_ico_experiment(
             "realizations": realizations,
             "seed": seed,
             "max_steps": max_steps,
+            "seed_protocol": "paired-baseline-v2",
+            "random_target_protocol": "nested-permutation-v1",
         },
     )
     (results_dir / "intervention_summary.csv").unlink(missing_ok=True)
@@ -136,51 +139,10 @@ def run_ico_experiment(
 
 
 def compute_phi_c(results: pd.DataFrame, *, threshold: float = PHI_C_THRESHOLD) -> pd.DataFrame:
-    """Return the first tested budget where g_minus falls below the threshold.
-
-    Phi_c is measured per run, not on the mean curve. A run whose reference is
-    already below the threshold records zero, and a run that never crosses keeps
-    a missing value with ``threshold_reached = False``. The table aggregates
-    those runs per model, fraction, and strategy.
-    """
-    if "g_minus" not in results:
-        raise ValueError("Phi_c requires g_minus measurements")
-    keys = [key for key in ("model", "f", "strategy", "realization") if key in results]
-    if "budget" not in results:
-        raise ValueError("Phi_c requires the tested budgets")
-
-    records = []
-    for key, group in results.groupby(keys, sort=True):
-        values = key if isinstance(key, tuple) else (key,)
-        crossed = group.loc[group["g_minus"] < threshold, "budget"]
-        record = dict(zip(keys, values, strict=True))
-        record["phi_c"] = float(crossed.min()) if len(crossed) else float("nan")
-        record["threshold_reached"] = bool(len(crossed))
-        records.append(record)
-
-    runs = pd.DataFrame(records)
-    if "realization" not in runs:
-        runs["realization"] = 0
-    aggregation = [key for key in keys if key != "realization"]
-    grouped = runs.groupby(aggregation, as_index=False).agg(
-        runs=("phi_c", "size"),
-        reached_runs=("threshold_reached", "sum"),
-        zero_budget_runs=("phi_c", lambda values: int((values == 0).sum())),
-        mean_phi_c=("phi_c", "mean"),
-        median_phi_c=("phi_c", "median"),
-        std_phi_c=("phi_c", "std"),
-    )
-    grouped["reached_fraction"] = grouped.reached_runs / grouped.runs
-    grouped["status"] = np.where(
-        grouped.reached_runs == 0,
-        "not reached in the tested range",
-        np.where(
-            grouped.zero_budget_runs == grouped.runs,
-            "reference below threshold at Phi = 0",
-            "reached",
-        ),
-    )
-    return grouped
+    """Summarize paired first crossings, baseline successes, and censored runs."""
+    runs = critical_budget_runs(results, threshold=threshold)
+    keys = [key for key in ("model", "f", "strategy") if key in runs]
+    return summarize_thresholds(runs, keys)
 
 
 def save_ico_reports(results_dir: Path) -> None:
@@ -211,6 +173,9 @@ def save_ico_reports(results_dir: Path) -> None:
 
     phi_c = compute_phi_c(results, threshold=threshold)
     phi_c.to_csv(results_dir / "phi_c.csv", index=False)
+    critical_budget_runs(results, threshold=threshold).to_csv(
+        results_dir / "phi_c_runs.csv", index=False
+    )
     for (model, fraction), group in results.groupby(["model", "f"], sort=True):
         plot_intervention_comparison(
             group, results_dir / f"intervention_comparison_{model}_f{fraction:g}.png"

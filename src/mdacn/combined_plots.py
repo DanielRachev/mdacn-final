@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from mdacn.threshold_plots import plot_threshold_summary
+
 STRATEGY_COLORS = {
     "random": "#7f7f7f",
     "degree": "#2a78d6",
@@ -226,39 +228,9 @@ def plot_ico_delta(summary: pd.DataFrame, path: Path, *, fraction: float = 0.5) 
 
 
 def plot_phi_c(phi_c: pd.DataFrame, path: Path) -> None:
-    """Save Phi_c against the initial fraction, one panel per model."""
-    if phi_c.empty or "mean_phi_c" not in phi_c:
-        return
-    models = sorted(phi_c["model"].unique())
-    if not models:
-        return
-    finite = phi_c["mean_phi_c"].dropna()
-    upper = max(0.05, float(finite.max()) * 1.2) if len(finite) else 0.1
-    fig, axes = plt.subplots(1, len(models), figsize=(6 * len(models), 4.8), sharey=True)
-    axes = np.atleast_1d(axes)
-    for axis, model in zip(axes, models, strict=True):
-        model_subset = phi_c.loc[phi_c["model"] == model]
-        for index, strategy in enumerate(sorted(model_subset["strategy"].unique())):
-            group = model_subset.loc[model_subset["strategy"] == strategy].sort_values("f")
-            if group.empty:
-                continue
-            axis.plot(
-                group["f"],
-                group["mean_phi_c"],
-                "o-",
-                markersize=4,
-                linewidth=1.4,
-                color=_strategy_color(str(strategy), index),
-                label=_strategy_label(str(strategy)),
-            )
-        axis.set_title(f"{model.capitalize()} model")
-        axis.set_xlabel("Initial negative fraction f")
-        axis.set_ylim(-0.01, upper)
-        axis.grid(alpha=0.2)
-        axis.legend(fontsize=7)
-    axes[0].set_ylabel("Critical budget Phi_c")
-    fig.suptitle("Critical budget by targeting strategy")
-    _save(fig, path)
+    """Show conditional thresholds with reached and zero-budget fractions."""
+    if not phi_c.empty:
+        plot_threshold_summary(phi_c, path)
 
 
 def plot_backfire(summary: pd.DataFrame, path: Path, *, fraction: float = 0.5) -> None:
@@ -332,37 +304,9 @@ def plot_rewiring(
 ) -> None:
     """Save rewiring homophily and Phi_c when those tables are available."""
     if not phi_c.empty and {"graph", "strategy", "mean_phi_c"} <= set(phi_c):
-        graphs = list(dict.fromkeys(phi_c["graph"]))
-        positions = {name: index for index, name in enumerate(graphs)}
-        fig, axis = plt.subplots(figsize=(10, 5))
-        for index, strategy in enumerate(sorted(phi_c["strategy"].unique())):
-            group = phi_c.loc[phi_c["strategy"] == strategy].copy()
-            group["position"] = group["graph"].map(positions)
-            axis.plot(
-                group["position"],
-                group["mean_phi_c"],
-                "o-",
-                markersize=5,
-                linewidth=1.4,
-                color=_strategy_color(str(strategy), index),
-                label=_strategy_label(str(strategy)),
-            )
-            if {"min_phi_c", "max_phi_c"} <= set(group):
-                axis.vlines(
-                    group["position"],
-                    group["min_phi_c"],
-                    group["max_phi_c"],
-                    color=_strategy_color(str(strategy), index),
-                    alpha=0.25,
-                    linewidth=4,
-                )
-        axis.set_xticks(list(positions.values()), graphs, rotation=20, ha="right")
-        axis.set_ylabel("Critical budget Phi_c")
-        axis.set_xlabel("Rewired configuration")
-        axis.grid(alpha=0.2)
-        axis.legend(fontsize=8)
-        axis.set_title("Phi_c on rewired configurations")
-        _save(fig, path)
+        plot_threshold_summary(
+            phi_c, path, x="graph", facet=None, title="Paired thresholds on rewired configurations"
+        )
         return
 
     if by_config.empty:

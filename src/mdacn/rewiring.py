@@ -8,7 +8,7 @@ from typing import Literal
 import networkx as nx
 import numpy as np
 
-from mdacn.data import community_labels
+from mdacn.data import canonical_edges, community_labels
 
 Target = Literal["insular", "integrated"]
 Rule = Literal["unbiased", "strict", "non_worsening", "metropolis"]
@@ -138,7 +138,7 @@ def rewire(
 
     ends: dict[int, list[list[int]]] = {sign: [] for sign in _POOLS}
     records: dict[int, list[dict]] = {sign: [] for sign in _POOLS}
-    for u, v, data in graph.edges(data=True):
+    for u, v, data in canonical_edges(graph):
         sign = data.get("sign")
         if sign not in _POOLS:
             raise ValueError("Every edge must have a sign of -1, 0, or +1")

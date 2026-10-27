@@ -87,9 +87,19 @@ def iter_node_impacts(
                             "intervention_g_minus": None,
                             "intervention_s1": None,
                             "impact": None,
+                            "direct_g_minus": None,
+                            "direct_impact": None,
+                            "spillover_impact": None,
+                            "unpinned_changes": None,
+                            "unpinned_minus_to_plus": None,
+                            "unpinned_plus_to_minus": None,
                             "eligible": False,
                         }
                         if baseline.stop_reason == "steady_state":
+                            direct_state = baseline.final_state.copy()
+                            position = positions[node]
+                            direct_state[position] = 1
+                            direct_g = opposing_cluster_size(graph, network.nodes, direct_state) / n
                             result = simulate_ico(
                                 matrix,
                                 baseline.final_state,
@@ -106,6 +116,22 @@ def iter_node_impacts(
                                 intervention_g_minus=g,
                                 intervention_s1=float(np.mean(result.final_state == -1)),
                                 impact=baseline_g - g,
+                                direct_g_minus=direct_g,
+                                direct_impact=baseline_g - direct_g,
+                                spillover_impact=direct_g - g,
+                                unpinned_changes=int(
+                                    np.count_nonzero(direct_state != result.final_state)
+                                ),
+                                unpinned_minus_to_plus=int(
+                                    np.count_nonzero(
+                                        (direct_state == -1) & (result.final_state == 1)
+                                    )
+                                ),
+                                unpinned_plus_to_minus=int(
+                                    np.count_nonzero(
+                                        (direct_state == 1) & (result.final_state == -1)
+                                    )
+                                ),
                                 eligible=result.stop_reason == "steady_state",
                             )
                         yield row
