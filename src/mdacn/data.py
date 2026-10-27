@@ -176,6 +176,14 @@ def largest_component(graph: nx.Graph) -> nx.Graph:
     return graph.subgraph(nodes).copy()
 
 
+def community_labels(graph: nx.Graph, attribute: str = "community") -> dict:
+    """Return the fixed community label of every node; every node must have one."""
+    missing = [node for node in graph if attribute not in graph.nodes[node]]
+    if missing:
+        raise ValueError(f"Nodes missing '{attribute}' labels: {missing[:5]}")
+    return {node: graph.nodes[node][attribute] for node in graph}
+
+
 def build_matrices(graph: nx.Graph) -> NetworkMatrices:
     """Owner: Jacek. Return binary adjacency and signed adjacency in one node order."""
     if graph.is_directed() or graph.is_multigraph() or nx.number_of_selfloops(graph):
