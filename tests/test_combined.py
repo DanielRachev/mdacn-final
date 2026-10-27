@@ -258,7 +258,11 @@ def test_combined_report_warns_for_missing_sections(tmp_path):
     _write(results / "nco" / "fraction_sweep.csv", _nco_table())
     output = tmp_path / "combined"
 
-    tables = run_combined_results(results, output_dir=output, temporal_dir=None)
+    tables = run_combined_results(
+        results,
+        output_dir=output,
+        temporal_dir=tmp_path / "no_temporal",
+    )
 
     assert not tables["phase_transitions"].empty
     manifest = json.loads((output / "inputs.json").read_text())
@@ -272,5 +276,5 @@ def test_combined_report_requires_at_least_one_input(tmp_path):
         run_combined_results(
             tmp_path / "empty",
             output_dir=tmp_path / "combined",
-            temporal_dir=None,
+            temporal_dir=tmp_path / "no_temporal",
         )
