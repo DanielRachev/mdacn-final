@@ -28,6 +28,7 @@ STAGES = (
     "setup",
     "characterise",
     "centrality",
+    "targeting-scores",
     "directed-roles",
     "features",
     "nco",

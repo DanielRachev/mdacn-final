@@ -104,15 +104,19 @@ def project(tmp_path, monkeypatch):
 
 
 def test_full_pipeline_and_individual_stages_produce_same_saved_runs(project, monkeypatch):
-    # directed-roles runs inside run and replaces the fixture's incident_signs.csv.
-    sources = [project[name] for name in ("signed_leverage", "temporal_activity")]
-    original_files = [path.read_bytes() for path in sources]
+    sources = [project[name] for name in ("signed_leverage", "incident_signs", "temporal_activity")]
+    temporal_activity = project["temporal_activity"].read_bytes()
+    # Both merged producer stages must supply their scores before features runs.
+    for name in ("signed_leverage", "incident_signs"):
+        project[name].unlink()
     workflow.run_project()
+    assert project["temporal_activity"].read_bytes() == temporal_activity
+    assert project["temporal_bridge"].is_file() and project["targeting_metadata"].is_file()
+    original_files = [path.read_bytes() for path in sources]
     incident = pd.read_csv(project["incident_signs"])
     assert incident.columns.tolist() == ["node", "negative_incident_ratio", "signed_bridge_ratio"]
     original_scores = pd.concat(
-        [pd.read_csv(path).set_index("node") for path in [*sources, project["incident_signs"]]],
-        axis=1,
+        [pd.read_csv(path).set_index("node") for path in sources], axis=1
     ).reset_index()
     pd.testing.assert_frame_equal(
         pd.read_csv(project["features"])[original_scores.columns], original_scores, check_like=True

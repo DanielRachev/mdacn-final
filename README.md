@@ -110,8 +110,8 @@ All seven impact scores are required for every core node.
 The `features` stage writes the shared score table consumed by `node-impact`.
 Scores are kept unchanged. Missing or invalid required scores produce an error;
 neither `features` nor `node-impact` calculates replacements. Contributor score
-exports for incident signs/bridges and temporal activity remain prerequisites
-until their producing stages are connected to `run`.
+exports for temporal activity remain prerequisites until their producing stage
+is connected to `run`.
 
 Signed leverage is `l_signed(i) = (1/d_i) * sum_j W_ij * max(0, (d_i - d_j)/(d_i + d_j))`
 with the unsigned degree `d_i`, so zero-sign edges count in the denominator.
