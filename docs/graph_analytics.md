@@ -41,6 +41,10 @@ seed. One set of coordinates is reused for both figures and saved with node
 names and community labels in `core_layout.csv`. Dense edges are drawn faintly;
 node positions and colours do not identify observed opinions or political groups.
 
+[Community interpretations](community_interpretation.md) describe the nine saved
+groups using representative members and selective source checks, with confidence
+and an annotated copy of the same layout.
+
 ## Spectral measurements and opinion GCCs
 
 The spectral radius is the largest eigenvalue of the unsigned adjacency matrix.
