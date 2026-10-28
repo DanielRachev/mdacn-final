@@ -33,6 +33,7 @@ EXPECTED_HASHES = {
 ANNOTATIONS = {
     0: {
         "label": "Arts, media & storytelling",
+        "examples": ("movies", "writingprompts"),
         "confidence": "medium",
         "interpretation": (
             "Movies, music, books, television and creative writing dominate the central "
@@ -44,6 +45,7 @@ ANNOTATIONS = {
     },
     1: {
         "label": "General discussion & advice (mixed)",
+        "examples": ("askreddit", "relationships"),
         "confidence": "medium",
         "interpretation": (
             "askreddit, pics and funny sit alongside personal advice and self-disclosure "
@@ -55,6 +57,7 @@ ANNOTATIONS = {
     },
     2: {
         "label": "Gaming & consumer technology",
+        "examples": ("gaming", "techsupport"),
         "confidence": "medium",
         "interpretation": (
             "gaming, games, leagueoflegends, overwatch and hearthstone anchor the gaming "
@@ -66,6 +69,7 @@ ANNOTATIONS = {
     },
     3: {
         "label": "Sports & team fandoms",
+        "examples": ("nfl", "nba"),
         "confidence": "high",
         "interpretation": (
             "The central members name sports leagues and teams, including nfl, nba, "
@@ -78,6 +82,7 @@ ANNOTATIONS = {
     },
     4: {
         "label": "News, politics & Reddit meta",
+        "examples": ("worldnews", "subredditdrama"),
         "confidence": "medium",
         "interpretation": (
             "worldnews, news, politics, conspiracy, the_donald and shitliberalssay mix "
@@ -90,6 +95,7 @@ ANNOTATIONS = {
     },
     5: {
         "label": "Localities & unresolved cases (mixed)",
+        "examples": ("adelaide", "gratefuldoe"),
         "confidence": "low",
         "interpretation": (
             "All 31 names were inspected. Australian and US locality names occur "
@@ -102,6 +108,7 @@ ANNOTATIONS = {
     },
     6: {
         "label": "Elite Dangerous: Powerplay factions",
+        "examples": ("aislingduval", "elitehudson"),
         "confidence": "high",
         "interpretation": (
             "All 12 names form a consistent game-faction pattern: aislingduval, "
@@ -115,6 +122,7 @@ ANNOTATIONS = {
     },
     7: {
         "label": "Technology, crypto & practical projects",
+        "examples": ("bitcoin", "learnprogramming"),
         "confidence": "medium",
         "interpretation": (
             "bitcoin, dogecoin and cryptocurrency occur with learnprogramming, sysadmin, "
@@ -127,6 +135,7 @@ ANNOTATIONS = {
     },
     8: {
         "label": "Mixed near-clique; topic unclear",
+        "examples": ("killlakill", "vmware"),
         "confidence": "low",
         "interpretation": (
             "All 13 names were inspected. They range from killlakill and thewire to "
@@ -214,6 +223,12 @@ def load_inputs(paths: dict[str, Path]) -> tuple[nx.Graph, dict[str, tuple[float
             raise ValueError("Graph, community CSV and layout must agree on every label")
     if set(nx.get_node_attributes(graph, "community").values()) != set(ANNOTATIONS):
         raise ValueError("The reviewed saved IDs must be exactly 0 through 8")
+    for community, annotation in ANNOTATIONS.items():
+        examples = annotation["examples"]
+        if len(examples) != 2 or any(
+            graph.nodes.get(node, {}).get("community") != community for node in examples
+        ):
+            raise ValueError(f"Figure examples must belong to saved community {community}")
     positions = {row["node"]: (float(row["x"]), float(row["y"])) for row in layout_rows}
     if not all(math.isfinite(value) for point in positions.values() for value in point):
         raise ValueError("Layout coordinates must be finite")
@@ -276,7 +291,8 @@ def render_report(profiles: list[dict], figure_link: str) -> str:
         f"![Labeled saved community layout]({figure_link}.png)",
         "",
         f"[PDF figure]({figure_link}.pdf). Colours and coordinates match "
-        "the original plot. Figure numbers are saved IDs plus one.",
+        "the original plot. The legend gives two example subreddits per community. "
+        "Figure numbers are saved IDs plus one; the mapping is retained in the table below.",
         "",
         "## Community profiles",
         "",
@@ -403,7 +419,7 @@ def render_report(profiles: list[dict], figure_link: str) -> str:
 
 def plot_interpretations(graph, positions, profiles, figure_dir: Path) -> None:
     figure, (axis, legend) = plt.subplots(
-        1, 2, figsize=(17, 10), gridspec_kw={"width_ratios": (2.45, 1), "wspace": 0.015}
+        1, 2, figsize=(17, 12.8), gridspec_kw={"width_ratios": (2.2, 1), "wspace": 0.015}
     )
     figure.subplots_adjust(left=0.015, right=0.985, bottom=0.10, top=0.87)
     edges = nx.draw_networkx_edges(
@@ -428,23 +444,24 @@ def plot_interpretations(graph, positions, profiles, figure_dir: Path) -> None:
         )
         y = 0.99 - index * 0.110
         label = textwrap.fill(f"{c + 1}. {annotation['label']}", width=37)
-        legend.scatter([0.025], [y - 0.012], s=70, color=[colour], linewidths=0)
-        legend.text(0.075, y, label, va="top", fontsize=11, weight="bold", linespacing=1.2)
-        offset = 0.024 * len(label.splitlines())
+        legend.scatter([0.025], [y - 0.012], s=95, color=[colour], linewidths=0)
+        legend.text(0.075, y, label, va="top", fontsize=15, weight="bold", linespacing=1.2)
+        offset = 0.026 * len(label.splitlines())
         legend.text(
             0.075,
             y - offset - 0.005,
-            f"Saved ID {c} | {profile['size']:,} nodes | {annotation['confidence']} confidence",
+            f"{profile['size']:,} nodes | {annotation['confidence']} confidence | "
+            f"outside {profile['outside_share']:.1%}",
             va="top",
-            fontsize=8.8,
+            fontsize=12,
             color="#4b5563",
         )
         legend.text(
             0.075,
-            y - offset - 0.029,
-            f"Outside share: {profile['outside_share']:.1%}",
+            y - offset - 0.033,
+            "e.g. " + ", ".join(f"r/{node}" for node in annotation["examples"]),
             va="top",
-            fontsize=8.8,
+            fontsize=12,
             color="#4b5563",
         )
     axis.set_axis_off()
@@ -462,15 +479,15 @@ def plot_interpretations(graph, positions, profiles, figure_dir: Path) -> None:
         0.055,
         "Descriptions are qualitative; confidence concerns the interpretation. "
         "Colours show structural groups, not observed opinions.",
-        fontsize=10,
+        fontsize=12,
         color="#374151",
     )
     figure.text(
         0.04,
         0.030,
-        "Outside share = boundary / (2 x internal + boundary). "
-        "Coordinates and colours match the original figure. Review: " + REVIEW_DATE,
-        fontsize=9,
+        "Outside share: fraction of connection ends leading to another group. "
+        "Internal edges count twice. Review: " + REVIEW_DATE,
+        fontsize=12,
         color="#6b7280",
     )
     for extension in ("png", "pdf"):

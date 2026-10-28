@@ -6,7 +6,7 @@ Sports and the small Elite Dangerous group have the clearest inspected themes. T
 
 ![Labeled saved community layout](figures/community_interpretation.png)
 
-[PDF figure](figures/community_interpretation.pdf). Colours and coordinates match the original plot. Figure numbers are saved IDs plus one.
+[PDF figure](figures/community_interpretation.pdf). Colours and coordinates match the original plot. The legend gives two example subreddits per community. Figure numbers are saved IDs plus one; the mapping is retained in the table below.
 
 ## Community profiles
 
