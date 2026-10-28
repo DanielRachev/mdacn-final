@@ -41,6 +41,17 @@ seed. One set of coordinates is reused for both figures and saved with node
 names and community labels in `core_layout.csv`. Dense edges are drawn faintly;
 node positions and colours do not identify observed opinions or political groups.
 
+Edge signs by community scope (`scripts/community_sign_fractions.py`, written to
+`results/community_sign_fractions.csv`), using the saved core labels:
+
+| Scope | Edges | Negative | Zero-sign | Negative fraction | Zero-sign fraction |
+| --- | --- | --- | --- | --- | --- |
+| Within a community | 28,519 | 1,662 | 685 | 5.83% | 2.40% |
+| Between communities | 29,947 | 2,528 | 784 | 8.44% | 2.62% |
+| All core edges | 58,466 | 4,190 | 1,469 | 7.17% | 2.51% |
+
+While this finding is purely descriptive, we can notice that negative edges make up a larger fraction of all edges between the Louvain communities than within these communities.
+
 ## Spectral measurements and opinion GCCs
 
 The spectral radius is the largest eigenvalue of the unsigned adjacency matrix.
